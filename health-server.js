@@ -7,7 +7,7 @@ const { promisify } = require("util");
 const http = require("http");
 
 const app = express();
-const PORT = process.env.PORT || 7861;
+const PORT = 7861; // always public-facing port, never read from PORT (that's for Paperclip)
 const PAPERCLIP_HOST = process.env.HOST || "127.0.0.1";
 const PAPERCLIP_PORT = 3100;
 

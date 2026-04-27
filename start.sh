@@ -91,10 +91,10 @@ until pg_isready -h localhost -U postgres 2>/dev/null; do
     sleep 1
 done
 
-# Set postgres password and create paperclip DB
-psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'paperclip';" 2>/dev/null || true
-psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'paperclip'" | grep -q 1 || \
-    psql -U postgres -c "CREATE DATABASE paperclip OWNER postgres;" 2>/dev/null || true
+# Set postgres password and create paperclip DB (must run as postgres OS user — peer auth)
+su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'paperclip';\"" 2>/dev/null || true
+su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'paperclip'\" | grep -q 1 || \
+    psql -c \"CREATE DATABASE paperclip OWNER postgres;\"" 2>/dev/null || true
 
 # Export correct DATABASE_URL with detected version credentials
 export DATABASE_URL="${DATABASE_URL:-postgres://postgres:paperclip@localhost:5432/paperclip}"
@@ -212,5 +212,5 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Start Paperclip in foreground
-exec pnpm start
+# Start Paperclip server (server/dist/index.js built from source)
+exec pnpm --filter @paperclipai/server start
