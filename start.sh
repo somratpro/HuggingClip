@@ -58,6 +58,26 @@ export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-paperclip-backup}"
 export PAPERCLIP_TELEMETRY_DISABLED="${PAPERCLIP_TELEMETRY_DISABLED:-1}"
 export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 
+# Auto-generate BETTER_AUTH_SECRET if not provided
+# User-set secret (HF Space secret) always takes precedence
+AUTH_SECRET_FILE="${PAPERCLIP_HOME}/.auth-secret"
+mkdir -p "${PAPERCLIP_HOME}"
+if [ -z "${BETTER_AUTH_SECRET}" ]; then
+    if [ -f "${AUTH_SECRET_FILE}" ]; then
+        # Reuse previously generated secret (persists across restarts)
+        export BETTER_AUTH_SECRET=$(cat "${AUTH_SECRET_FILE}")
+        echo -e "${YELLOW}Using persisted auth secret from ${AUTH_SECRET_FILE}${NC}"
+    else
+        # First boot — generate and save
+        export BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+        echo "${BETTER_AUTH_SECRET}" > "${AUTH_SECRET_FILE}"
+        chmod 600 "${AUTH_SECRET_FILE}"
+        echo -e "${YELLOW}Generated new auth secret (saved to ${AUTH_SECRET_FILE})${NC}"
+    fi
+else
+    echo -e "${GREEN}Using BETTER_AUTH_SECRET from environment${NC}"
+fi
+
 echo -e "${GREEN}✓ Environment validated${NC}\n"
 
 # ============================================================================
