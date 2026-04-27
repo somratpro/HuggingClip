@@ -1,26 +1,26 @@
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const fs = require('fs');
-const path = require('path');
-const { promisify } = require('util');
-const http = require('http');
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const fs = require("fs");
+const path = require("path");
+const { promisify } = require("util");
+const http = require("http");
 
 const app = express();
 const PORT = process.env.PORT || 7861;
-const PAPERCLIP_HOST = process.env.HOST || '127.0.0.1';
+const PAPERCLIP_HOST = process.env.HOST || "127.0.0.1";
 const PAPERCLIP_PORT = 3100;
 
 // Middleware
 app.use(cors());
-app.use(morgan('combined'));
+app.use(morgan("combined"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ============================================================================
 // Health Check Endpoint
 // ============================================================================
-app.get('/health', async (req, res) => {
+app.get("/health", async (req, res) => {
   try {
     const syncStatus = readSyncStatus();
     const now = Math.floor(Date.now() / 1000);
@@ -30,38 +30,43 @@ app.get('/health', async (req, res) => {
     const paperclipStatus = await checkPaperclipHealth();
 
     res.status(200).json({
-      status: 'healthy',
+      status: "healthy",
       timestamp: new Date().toISOString(),
       uptime: Math.floor(uptime),
       services: {
         healthServer: {
-          status: 'running',
+          status: "running",
           port: PORT,
-          uptime: Math.floor(uptime)
+          uptime: Math.floor(uptime),
         },
         paperclip: {
           status: paperclipStatus.status,
           port: PAPERCLIP_PORT,
-          url: `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}`
+          url: `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}`,
         },
         database: {
-          status: syncStatus.db_status || 'unknown',
+          status: syncStatus.db_status || "unknown",
           lastSync: syncStatus.last_sync_time || null,
-          lastSyncError: syncStatus.last_error || null
-        }
+          lastSyncError: syncStatus.last_error || null,
+        },
       },
       backup: {
-        enabled: process.env.SYNC_DISABLED !== 'true',
+        enabled: process.env.SYNC_DISABLED !== "true",
         interval: process.env.SYNC_INTERVAL || 180,
         lastSync: syncStatus.last_sync_time,
-        nextSync: syncStatus.last_sync_time ? new Date((syncStatus.last_sync_time + (parseInt(process.env.SYNC_INTERVAL || 180) * 1000))).toISOString() : null
-      }
+        nextSync: syncStatus.last_sync_time
+          ? new Date(
+              syncStatus.last_sync_time +
+                parseInt(process.env.SYNC_INTERVAL || 180) * 1000,
+            ).toISOString()
+          : null,
+      },
     });
   } catch (error) {
     res.status(503).json({
-      status: 'unhealthy',
+      status: "unhealthy",
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
@@ -69,15 +74,15 @@ app.get('/health', async (req, res) => {
 // ============================================================================
 // Dashboard Route
 // ============================================================================
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.send(getDashboardHTML());
 });
 
-app.get('/dashboard/', (req, res) => {
+app.get("/dashboard/", (req, res) => {
   res.send(getDashboardHTML());
 });
 
-app.get('/dashboard/status', (req, res) => {
+app.get("/dashboard/status", (req, res) => {
   const syncStatus = readSyncStatus();
   const uptime = process.uptime();
 
@@ -86,21 +91,21 @@ app.get('/dashboard/status', (req, res) => {
     startTime: new Date(Date.now() - uptime * 1000).toISOString(),
     syncStatus: syncStatus,
     environment: {
-      syncDisabled: process.env.SYNC_DISABLED === 'true',
+      syncDisabled: process.env.SYNC_DISABLED === "true",
       syncInterval: process.env.SYNC_INTERVAL || 180,
-      paperclipHome: process.env.PAPERCLIP_HOME || '/paperclip'
-    }
+      paperclipHome: process.env.PAPERCLIP_HOME || "/paperclip",
+    },
   });
 });
 
 // ============================================================================
 // UptimeRobot Setup Route
 // ============================================================================
-app.post('/dashboard/uptimerobot/setup', (req, res) => {
+app.post("/dashboard/uptimerobot/setup", (req, res) => {
   const { webhookUrl } = req.body;
 
   if (!webhookUrl) {
-    return res.status(400).json({ error: 'webhookUrl required' });
+    return res.status(400).json({ error: "webhookUrl required" });
   }
 
   // Store webhook URL in environment or file
@@ -108,8 +113,8 @@ app.post('/dashboard/uptimerobot/setup', (req, res) => {
 
   res.json({
     success: true,
-    message: 'UptimeRobot webhook configured',
-    details: 'Health checks will now notify UptimeRobot to prevent sleep'
+    message: "UptimeRobot webhook configured",
+    details: "Health checks will now notify UptimeRobot to prevent sleep",
   });
 });
 
@@ -118,8 +123,8 @@ app.post('/dashboard/uptimerobot/setup', (req, res) => {
 // ============================================================================
 
 // Proxy all /app/* requests to Paperclip
-app.all('/app/*', async (req, res) => {
-  const targetPath = req.path.replace('/app', '') || '/';
+app.all("/app/*", async (req, res) => {
+  const targetPath = req.path.replace("/app", "") || "/";
   const targetUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}${targetPath}`;
 
   try {
@@ -127,11 +132,11 @@ app.all('/app/*', async (req, res) => {
       req.method,
       targetUrl,
       req.headers,
-      req.body
+      req.body,
     );
 
     // Copy response headers
-    Object.keys(response.headers).forEach(key => {
+    Object.keys(response.headers).forEach((key) => {
       res.setHeader(key, response.headers[key]);
     });
 
@@ -139,14 +144,14 @@ app.all('/app/*', async (req, res) => {
   } catch (error) {
     console.error(`Proxy error: ${error.message}`);
     res.status(503).json({
-      error: 'Paperclip service unavailable',
-      details: error.message
+      error: "Paperclip service unavailable",
+      details: error.message,
     });
   }
 });
 
 // Proxy all /api/* requests to Paperclip
-app.all('/api/*', async (req, res) => {
+app.all("/api/*", async (req, res) => {
   const targetPath = req.path;
   const targetUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}${targetPath}`;
 
@@ -155,10 +160,10 @@ app.all('/api/*', async (req, res) => {
       req.method,
       targetUrl,
       req.headers,
-      req.body
+      req.body,
     );
 
-    Object.keys(response.headers).forEach(key => {
+    Object.keys(response.headers).forEach((key) => {
       res.setHeader(key, response.headers[key]);
     });
 
@@ -166,8 +171,8 @@ app.all('/api/*', async (req, res) => {
   } catch (error) {
     console.error(`API proxy error: ${error.message}`);
     res.status(503).json({
-      error: 'Paperclip API unavailable',
-      details: error.message
+      error: "Paperclip API unavailable",
+      details: error.message,
     });
   }
 });
@@ -175,7 +180,7 @@ app.all('/api/*', async (req, res) => {
 // ============================================================================
 // Default Route - Redirect to Dashboard
 // ============================================================================
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.send(getDashboardHTML());
 });
 
@@ -185,19 +190,19 @@ app.get('/', (req, res) => {
 
 function readSyncStatus() {
   try {
-    if (fs.existsSync('/tmp/sync-status.json')) {
-      const data = fs.readFileSync('/tmp/sync-status.json', 'utf8');
+    if (fs.existsSync("/tmp/sync-status.json")) {
+      const data = fs.readFileSync("/tmp/sync-status.json", "utf8");
       return JSON.parse(data);
     }
   } catch (error) {
-    console.error('Error reading sync status:', error.message);
+    console.error("Error reading sync status:", error.message);
   }
 
   return {
-    db_status: 'unknown',
+    db_status: "unknown",
     last_sync_time: null,
     last_error: null,
-    sync_count: 0
+    sync_count: 0,
   };
 }
 
@@ -206,16 +211,18 @@ function checkPaperclipHealth() {
     const healthUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}/health`;
 
     const timeout = setTimeout(() => {
-      resolve({ status: 'unreachable', reason: 'timeout' });
+      resolve({ status: "unreachable", reason: "timeout" });
     }, 5000);
 
-    http.get(healthUrl, (res) => {
-      clearTimeout(timeout);
-      resolve({ status: 'running', statusCode: res.statusCode });
-    }).on('error', (err) => {
-      clearTimeout(timeout);
-      resolve({ status: 'unreachable', reason: err.message });
-    });
+    http
+      .get(healthUrl, (res) => {
+        clearTimeout(timeout);
+        resolve({ status: "running", statusCode: res.statusCode });
+      })
+      .on("error", (err) => {
+        clearTimeout(timeout);
+        resolve({ status: "unreachable", reason: err.message });
+      });
   });
 }
 
@@ -225,28 +232,28 @@ function proxyRequest(method, url, headers, body) {
       method,
       headers: {
         ...headers,
-        'host': `${PAPERCLIP_HOST}:${PAPERCLIP_PORT}`
+        host: `${PAPERCLIP_HOST}:${PAPERCLIP_PORT}`,
       },
-      timeout: 30000
+      timeout: 30000,
     };
 
     const req = http.request(url, options, (res) => {
-      let data = '';
+      let data = "";
 
-      res.on('data', (chunk) => {
+      res.on("data", (chunk) => {
         data += chunk;
       });
 
-      res.on('end', () => {
+      res.on("end", () => {
         resolve({
           statusCode: res.statusCode,
           headers: res.headers,
-          body: data
+          body: data,
         });
       });
     });
 
-    req.on('error', (err) => {
+    req.on("error", (err) => {
       reject(err);
     });
 
@@ -493,7 +500,7 @@ function getDashboardHTML() {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔗 HuggingClip</h1>
+            <h1>📎 HuggingClip</h1>
             <p>Paperclip AI Agent Orchestration on Hugging Face Spaces</p>
         </div>
 
@@ -675,7 +682,7 @@ function getDashboardHTML() {
 // ============================================================================
 // Start Server
 // ============================================================================
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`✓ Health server listening on port ${PORT}`);
   console.log(`✓ Dashboard: http://localhost:${PORT}/`);
   console.log(`✓ API proxy: http://localhost:${PORT}/api/*`);

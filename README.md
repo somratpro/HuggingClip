@@ -1,8 +1,8 @@
 ---
 title: HuggingClip
-emoji: 🔗
-colorFrom: purple
-colorTo: blue
+emoji: 📎
+colorFrom: gray
+colorTo: black
 sdk: docker
 app_port: 7861
 pinned: true
@@ -20,13 +20,14 @@ secrets:
     description: Optional Cloudflare account ID (required if using Cloudflare proxy).
 ---
 
-# 🔗 HuggingClip
+# � HuggingClip
 
 Paperclip AI Agent Orchestration Platform running on Hugging Face Spaces.
 
 Deploy your own instance of [Paperclip](https://paperclip.ing/) — the open-source platform for orchestrating AI agents to run autonomous businesses — on Hugging Face Spaces with automatic persistent backup to Hugging Face Datasets.
 
 **Features:**
+
 - ✅ Run Paperclip on HF Spaces (free tier compatible)
 - ✅ Automatic database backup to HF Dataset (survives restarts)
 - ✅ Health monitoring dashboard with real-time status
@@ -41,6 +42,7 @@ Deploy your own instance of [Paperclip](https://paperclip.ing/) — the open-sou
 [Deploy to Hugging Face Spaces](https://huggingface.co/new-space?template=somratpro/HuggingClip)
 
 Or manually:
+
 1. Create a new Space on [Hugging Face](https://huggingface.co/new-space)
 2. Choose **Docker** as the runtime
 3. Copy this repository as the source
@@ -50,6 +52,7 @@ Or manually:
 ### Local Development
 
 #### Prerequisites
+
 - Docker & Docker Compose
 - Node.js 20+ (for direct testing)
 - PostgreSQL 13+ (if running outside Docker)
@@ -185,6 +188,7 @@ docker-compose up -d
 Access the health monitoring dashboard at: `http://your-space-url/`
 
 **Shows:**
+
 - Paperclip service status (running/down)
 - Database health & last backup timestamp
 - System uptime & start time
@@ -195,6 +199,7 @@ Access the health monitoring dashboard at: `http://your-space-url/`
 Full Paperclip interface at: `http://your-space-url/app/`
 
 **Features:**
+
 - Create companies and organizational structures
 - Recruit AI agents with specific roles
 - Define tasks and monitor execution
@@ -207,6 +212,7 @@ Full Paperclip interface at: `http://your-space-url/app/`
 Direct API access at: `http://your-space-url/api/*`
 
 Examples:
+
 ```bash
 # Get API status
 curl http://localhost:7861/health
@@ -252,6 +258,7 @@ python3 /app/paperclip-sync.py restore
 **Problem**: "Cannot connect to PostgreSQL"
 
 **Solution:**
+
 1. Check DATABASE_URL is correct: `postgres://user:pass@host:port/db`
 2. Verify PostgreSQL is running: `docker ps | grep postgres`
 3. Check credentials in DATABASE_URL match PostgreSQL setup
@@ -262,6 +269,7 @@ python3 /app/paperclip-sync.py restore
 **Problem**: "Sync status shows error"
 
 **Solution:**
+
 1. Verify `HF_TOKEN` is set and valid
 2. Check HF Dataset is created: `huggingface-cli repo info datasets/your-username/paperclip-backup`
 3. Look at container logs: `docker logs huggingclip-app`
@@ -269,9 +277,10 @@ python3 /app/paperclip-sync.py restore
 
 ### Paperclip Not Accessible
 
-**Problem**: Can't reach http://localhost:7861/app/
+**Problem**: Can't reach <http://localhost:7861/app/>
 
 **Solution:**
+
 1. Check container is running: `docker ps`
 2. Check ports are exposed: `docker port huggingclip-app`
 3. Verify port 3100 is not blocked
@@ -283,6 +292,7 @@ python3 /app/paperclip-sync.py restore
 **Problem**: Container exits repeatedly
 
 **Solution:**
+
 1. Check logs: `docker logs --tail=100 huggingclip-app`
 2. Common causes:
    - Invalid DATABASE_URL
@@ -296,6 +306,7 @@ python3 /app/paperclip-sync.py restore
 **Problem**: "Killed" message or container restarts
 
 **Solution:**
+
 1. HF Spaces free tier: 2 vCPU, 16GB RAM, 50GB storage
 2. Reduce backup interval: `SYNC_INTERVAL=600` (every 10 min instead of 3)
 3. Reduce database size: Archive old agent runs and conversations
@@ -363,6 +374,7 @@ python3 /app/paperclip-sync.py restore
 HuggingClip stores only the **latest backup** in HF Dataset (`snapshots/latest.tar.gz`).
 
 **To keep multiple backups manually:**
+
 ```bash
 # Download backup from HF
 huggingface-cli download datasets/your-username/paperclip-backup \
@@ -393,6 +405,7 @@ curl -s http://localhost:7861/health | jq .
 ```
 
 Response includes:
+
 - Service uptime
 - Database status
 - Last backup timestamp
