@@ -197,8 +197,9 @@ app.all("*", async (req, res) => {
 
     res.status(response.statusCode).send(response.body);
   } catch (error) {
+    const starting = error.message && error.message.includes("ECONNREFUSED");
     res.status(503).json({
-      error: "Paperclip service unavailable",
+      error: starting ? "Paperclip starting up, please wait..." : "Paperclip service unavailable",
       details: error.message,
     });
   }

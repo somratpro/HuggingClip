@@ -243,6 +243,7 @@ cleanup() {
     echo "Stopping services..."
     [ -n "$HEALTH_PID" ] && kill $HEALTH_PID 2>/dev/null || true
     [ -n "$SYNC_PID" ] && kill $SYNC_PID 2>/dev/null || true
+    [ -n "$PAPERCLIP_PID" ] && kill $PAPERCLIP_PID 2>/dev/null || true
 
     echo -e "${GREEN}Shutdown complete${NC}"
     exit 0
@@ -250,19 +251,43 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Generate first admin invite URL if no admin exists yet
-# Runs against the database directly (no server needed) and prints the URL to logs
-echo -e "${BLUE}[8/8] Bootstrapping admin account...${NC}"
-BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1)
-if echo "$BOOTSTRAP_OUTPUT" | grep -qi "invite\|http\|url\|link"; then
-    echo -e "${GREEN}✓ Admin invite URL:${NC}"
-    echo "$BOOTSTRAP_OUTPUT"
-    echo -e "${YELLOW}Copy the URL above to complete first-time setup.${NC}\n"
-elif echo "$BOOTSTRAP_OUTPUT" | grep -qi "already\|exists\|skip"; then
-    echo -e "${GREEN}✓ Admin account already exists${NC}\n"
+# ============================================================================
+# 8. Start Paperclip, wait for init, then bootstrap admin
+# ============================================================================
+echo -e "${BLUE}[8/8] Starting Paperclip server...${NC}"
+
+# Start Paperclip in background so we can run post-init steps
+node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
+PAPERCLIP_PID=$!
+
+# Wait for Paperclip to create config.json and health endpoint to respond (max 90s)
+CONFIG_FILE="/paperclip/instances/default/config.json"
+echo "Waiting for Paperclip to initialize..."
+for i in $(seq 1 45); do
+    if [ -f "$CONFIG_FILE" ] && curl -sf http://localhost:3100/api/health >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Paperclip ready (${i}s)${NC}"
+        break
+    fi
+    sleep 2
+done
+
+# Bootstrap first admin — generates invite URL (only works if no admin exists)
+if [ -f "$CONFIG_FILE" ]; then
+    echo -e "${BLUE}Bootstrapping admin account...${NC}"
+    BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
+    if echo "$BOOTSTRAP_OUTPUT" | grep -q "http"; then
+        INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep -o 'https\?://[^ ]*' | head -1)
+        echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║  ADMIN SETUP URL (open in browser):          ║${NC}"
+        echo -e "${GREEN}║  ${INVITE_URL}${NC}"
+        echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+    else
+        # Already configured or no output — not an error
+        echo -e "${GREEN}✓ Admin account ready${NC}"
+    fi
 else
-    echo -e "${YELLOW}Bootstrap output: ${BOOTSTRAP_OUTPUT}${NC}\n"
+    echo -e "${YELLOW}Warning: Paperclip config not found, skipping admin bootstrap${NC}"
 fi
 
-# Start Paperclip server with tsx loader (loads workspace .ts packages at runtime)
-exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js
+# Keep container alive — wait for Paperclip process to exit
+wait $PAPERCLIP_PID
