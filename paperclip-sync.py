@@ -11,8 +11,12 @@ import tarfile
 import tempfile
 import subprocess
 import logging
+import warnings
 from datetime import datetime
 from pathlib import Path
+
+# Suppress huggingface_hub deprecation noise about local_dir_use_symlinks
+warnings.filterwarnings('ignore', category=UserWarning, module='huggingface_hub')
 
 from huggingface_hub import HfApi
 from huggingface_hub.utils import RepositoryNotFoundError, EntryNotFoundError
@@ -281,6 +285,7 @@ def restore_database(restore_file: str) -> bool:
             result = subprocess.run(
                 restore_cmd,
                 stdin=f,
+                stdout=subprocess.DEVNULL,  # suppress CREATE TABLE / ALTER TABLE / COPY noise
                 stderr=subprocess.PIPE,
                 env=env,
                 timeout=300
@@ -347,7 +352,7 @@ def sync_from_hf() -> bool:
         # Extract tarball
         logger.info('Extracting backup...')
         with tarfile.open(snapshot_path, 'r:gz') as tar:
-            tar.extractall(temp_dir)
+            tar.extractall(temp_dir, filter='data')
 
         dump_file = Path(temp_dir) / 'paperclip.sql'
         if not dump_file.exists():
