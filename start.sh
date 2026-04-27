@@ -199,4 +199,4 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # Start Paperclip in foreground
-exec node server.js
+exec pnpm start
