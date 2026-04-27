@@ -218,6 +218,7 @@ export PAPERCLIP_TELEMETRY_DISABLED
 export DO_NOT_TRACK
 export PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
 export PAPERCLIP_INSTANCE_ID="${PAPERCLIP_INSTANCE_ID:-default}"
+export PAPERCLIP_CONFIG="${PAPERCLIP_CONFIG:-${PAPERCLIP_HOME}/instances/default/config.json}"
 export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
 export PAPERCLIP_ALLOWED_HOSTNAMES
 export PAPERCLIP_PUBLIC_URL
@@ -260,33 +261,33 @@ echo -e "${BLUE}[8/8] Starting Paperclip server...${NC}"
 node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 PAPERCLIP_PID=$!
 
-# Wait for Paperclip to create config.json and health endpoint to respond (max 90s)
-CONFIG_FILE="/paperclip/instances/default/config.json"
+# Wait for Paperclip API to be ready — use 127.0.0.1 to avoid IPv6 issues (max 90s)
 echo "Waiting for Paperclip to initialize..."
+PAPERCLIP_READY=false
 for i in $(seq 1 45); do
-    if [ -f "$CONFIG_FILE" ] && curl -sf http://localhost:3100/api/health >/dev/null 2>&1; then
+    if curl -sf http://127.0.0.1:3100/api/health >/dev/null 2>&1; then
         echo -e "${GREEN}✓ Paperclip ready (${i}s)${NC}"
+        PAPERCLIP_READY=true
         break
     fi
     sleep 2
 done
 
-# Bootstrap first admin — generates invite URL (only works if no admin exists)
-if [ -f "$CONFIG_FILE" ]; then
+# Bootstrap first admin — generates invite URL if no admin exists yet
+if [ "$PAPERCLIP_READY" = true ]; then
     echo -e "${BLUE}Bootstrapping admin account...${NC}"
     BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
     if echo "$BOOTSTRAP_OUTPUT" | grep -q "http"; then
         INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep -o 'https\?://[^ ]*' | head -1)
         echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
         echo -e "${GREEN}║  ADMIN SETUP URL (open in browser):          ║${NC}"
-        echo -e "${GREEN}║  ${INVITE_URL}${NC}"
+        echo -e "${GREEN}║  ${INVITE_URL}                               ║${NC}"
         echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
     else
-        # Already configured or no output — not an error
         echo -e "${GREEN}✓ Admin account ready${NC}"
     fi
 else
-    echo -e "${YELLOW}Warning: Paperclip config not found, skipping admin bootstrap${NC}"
+    echo -e "${YELLOW}Warning: Paperclip did not become ready in 90s${NC}"
 fi
 
 # Keep container alive — wait for Paperclip process to exit
