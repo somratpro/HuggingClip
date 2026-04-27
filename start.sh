@@ -223,6 +223,63 @@ export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
 export PAPERCLIP_ALLOWED_HOSTNAMES
 export PAPERCLIP_PUBLIC_URL
 
+# Create Paperclip instance config.json if it doesn't exist.
+# Required by bootstrap-ceo CLI to find DB and generate the admin invite URL.
+# Skipped when a config was already restored from HF Dataset backup.
+if [ ! -f "${PAPERCLIP_CONFIG}" ]; then
+    echo "Creating Paperclip instance config (first boot)..."
+    mkdir -p "$(dirname "${PAPERCLIP_CONFIG}")"
+    python3 <<'PYEOF'
+import json, os
+
+home = os.environ.get("PAPERCLIP_HOME", "/paperclip")
+port = int(os.environ.get("PORT", "3100"))
+public_url = os.environ.get("PAPERCLIP_PUBLIC_URL", f"http://localhost:{port}")
+
+config = {
+    "$meta": {"version": 1, "updatedAt": "2024-01-01T00:00:00Z", "source": "onboard"},
+    "llm": {"provider": "claude", "apiKey": ""},
+    "database": {
+        "mode": "postgres",
+        "connectionString": os.environ.get("DATABASE_URL", "postgres://postgres:paperclip@localhost:5432/paperclip")
+    },
+    "logging": {"mode": "file", "logDir": f"{home}/instances/default/logs"},
+    "server": {
+        "deploymentMode": os.environ.get("PAPERCLIP_DEPLOYMENT_MODE", "authenticated"),
+        "exposure": os.environ.get("PAPERCLIP_DEPLOYMENT_EXPOSURE", "private"),
+        "host": "0.0.0.0",
+        "port": port,
+        "allowedHostnames": [],
+        "serveUi": True
+    },
+    "auth": {
+        "baseUrlMode": "explicit",
+        "publicBaseUrl": public_url,
+        "disableSignUp": False
+    },
+    "storage": {
+        "provider": "local_disk",
+        "localDisk": {"baseDir": f"{home}/instances/default/data/storage"}
+    },
+    "secrets": {
+        "provider": "local_encrypted",
+        "strictMode": False,
+        "localEncrypted": {"keyFilePath": f"{home}/instances/default/secrets/master.key"}
+    },
+    "telemetry": {"enabled": False}
+}
+
+config_path = os.environ.get("PAPERCLIP_CONFIG", f"{home}/instances/default/config.json")
+os.makedirs(os.path.dirname(config_path), exist_ok=True)
+with open(config_path, "w") as f:
+    json.dump(config, f, indent=2)
+print(f"  Config written to {config_path}")
+PYEOF
+    echo -e "${GREEN}✓ Instance config created${NC}"
+else
+    echo -e "${GREEN}✓ Instance config found at ${PAPERCLIP_CONFIG}${NC}"
+fi
+
 echo -e "${GREEN}✓ All systems ready${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
 echo -e "  Health Dashboard: http://localhost:7861/"
