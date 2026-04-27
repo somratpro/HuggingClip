@@ -222,6 +222,10 @@ export PAPERCLIP_CONFIG="${PAPERCLIP_CONFIG:-${PAPERCLIP_HOME}/instances/default
 export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
 export PAPERCLIP_ALLOWED_HOSTNAMES
 export PAPERCLIP_PUBLIC_URL
+# Pass LLM API keys through to Paperclip adapters and sub-processes
+export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY:-}}"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 
 # Create Paperclip instance config.json if it doesn't exist.
 # Required by bootstrap-ceo CLI to find DB and generate the admin invite URL.
