@@ -203,6 +203,21 @@ export PAPERCLIP_HOME
 export PAPERCLIP_DEPLOYMENT_MODE
 export PAPERCLIP_TELEMETRY_DISABLED
 export DO_NOT_TRACK
+export PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
+export PAPERCLIP_INSTANCE_ID="${PAPERCLIP_INSTANCE_ID:-default}"
+export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
+
+# Allowlist hostnames Paperclip will accept connections from
+echo "Configuring allowed hostnames..."
+pnpm paperclipai allowed-hostname localhost 2>/dev/null || true
+pnpm paperclipai allowed-hostname 127.0.0.1 2>/dev/null || true
+pnpm paperclipai allowed-hostname 0.0.0.0 2>/dev/null || true
+# HF Spaces sets SPACE_HOST to the public URL (e.g. somratpro-huggingclip.hf.space)
+if [ -n "$SPACE_HOST" ]; then
+    pnpm paperclipai allowed-hostname "$SPACE_HOST" 2>/dev/null || true
+    echo "Allowed HF Space host: $SPACE_HOST"
+fi
+echo -e "${GREEN}✓ Hostnames configured${NC}"
 
 echo -e "${GREEN}✓ All systems ready${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
