@@ -178,11 +178,30 @@ app.all("/api/*", async (req, res) => {
   }
 });
 
-// ============================================================================
-// Default Route - Redirect to Dashboard
-// ============================================================================
-app.get("/", (req, res) => {
-  res.send(getDashboardHTML());
+// Catch-all: proxy /assets/*, /site.webmanifest, /favicon.* and any other
+// paths Paperclip's UI references with absolute URLs directly to Paperclip.
+app.all("*", async (req, res) => {
+  const targetUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}${req.url}`;
+
+  try {
+    const response = await proxyRequest(
+      req.method,
+      targetUrl,
+      req.headers,
+      req.body,
+    );
+
+    Object.keys(response.headers).forEach((key) => {
+      res.setHeader(key, response.headers[key]);
+    });
+
+    res.status(response.statusCode).send(response.body);
+  } catch (error) {
+    res.status(503).json({
+      error: "Paperclip service unavailable",
+      details: error.message,
+    });
+  }
 });
 
 // ============================================================================
