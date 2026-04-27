@@ -1,3 +1,25 @@
+---
+title: HuggingClip
+emoji: 🔗
+colorFrom: purple
+colorTo: blue
+sdk: docker
+app_port: 7861
+pinned: true
+license: mit
+secrets:
+  - name: HF_TOKEN
+    description: Hugging Face API token for database backup persistence to HF Dataset.
+  - name: CLAUDE_API_KEY
+    description: Anthropic Claude API key for Claude-powered agents.
+  - name: BETTER_AUTH_SECRET
+    description: Random secret for user authentication (generate with openssl rand -base64 32).
+  - name: CLOUDFLARE_WORKERS_TOKEN
+    description: Optional Cloudflare API token for outbound proxy setup.
+  - name: CLOUDFLARE_ACCOUNT_ID
+    description: Optional Cloudflare account ID (required if using Cloudflare proxy).
+---
+
 # 🔗 HuggingClip
 
 Paperclip AI Agent Orchestration Platform running on Hugging Face Spaces.
