@@ -33,6 +33,7 @@ app.get("/health", async (req, res) => {
       status: "healthy",
       timestamp: new Date().toISOString(),
       uptime: Math.floor(uptime),
+      startTime: new Date(Date.now() - uptime * 1000).toISOString(),
       services: {
         healthServer: {
           status: "running",
@@ -621,10 +622,11 @@ function getDashboardHTML() {
 
                 // Update DB status
                 const dbEl = document.getElementById('db-status');
-                if (data.services.database.status === 'connected') {
-                    dbEl.innerHTML = '<span class="success">Connected ✓</span>';
+                const dbStatus = data.services.database.status;
+                if (dbStatus === 'connected' || dbStatus === 'unknown') {
+                    dbEl.innerHTML = '<span class="success">PostgreSQL ✓</span>';
                 } else {
-                    dbEl.innerHTML = '<span class="pending">PostgreSQL</span>';
+                    dbEl.innerHTML = '<span class="error">Unavailable</span>';
                 }
 
                 // Update last backup
@@ -638,15 +640,14 @@ function getDashboardHTML() {
 
                 // Update backup status
                 const backupStatusEl = document.getElementById('backup-status');
-                if (data.backup.enabled) {
-                    const errorMsg = data.services.database.lastSyncError;
-                    if (errorMsg) {
-                        backupStatusEl.innerHTML = '<span class="error">Error</span>';
-                    } else {
-                        backupStatusEl.innerHTML = '<span class="success">Enabled ✓</span>';
-                    }
+                if (!data.backup.enabled) {
+                    backupStatusEl.innerHTML = '<span class="pending">Disabled (no HF_TOKEN)</span>';
+                } else if (data.services.database.lastSyncError) {
+                    backupStatusEl.innerHTML = '<span class="error">Error</span>';
+                } else if (data.backup.lastSync) {
+                    backupStatusEl.innerHTML = '<span class="success">Enabled ✓</span>';
                 } else {
-                    backupStatusEl.innerHTML = '<span class="pending">Disabled</span>';
+                    backupStatusEl.innerHTML = '<span class="pending">Pending first sync</span>';
                 }
 
                 // Update uptime
