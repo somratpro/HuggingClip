@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { promisify } = require("util");
 const http = require("http");
+const net = require("net");
 
 const app = express();
 const PORT = 7861; // always public-facing port, never read from PORT (that's for Paperclip)
@@ -13,10 +14,11 @@ const PAPERCLIP_PORT = 3100;
 
 // Middleware
 app.use(cors());
-// Skip logging for health polling and static assets — too noisy
+// Skip logging for health polling, static assets, and WebSocket upgrade attempts
 app.use(morgan("tiny", {
   skip: (req) => req.path === "/health" || req.path === "/sw.js" ||
-                 req.path.startsWith("/assets/") || req.path === "/favicon.ico"
+                 req.path.startsWith("/assets/") || req.path === "/favicon.ico" ||
+                 req.path.endsWith("/events/ws")
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -788,9 +790,32 @@ function getDashboardHTML() {
 }
 
 // ============================================================================
-// Start Server
+// Start Server + WebSocket Proxy
 // ============================================================================
-app.listen(PORT, "0.0.0.0", () => {
+const server = http.createServer(app);
+
+// Proxy WebSocket upgrades (e.g. /api/companies/:id/events/ws) directly to Paperclip.
+// Without this, the browser gets 403 and spams reconnect attempts.
+server.on("upgrade", (req, socket, head) => {
+  const targetSocket = net.connect(PAPERCLIP_PORT, "127.0.0.1", () => {
+    let upgradeReq = `${req.method} ${req.url} HTTP/1.1\r\n`;
+    for (const [key, val] of Object.entries(req.headers)) {
+      upgradeReq += `${key}: ${val}\r\n`;
+    }
+    upgradeReq += "\r\n";
+    targetSocket.write(upgradeReq);
+    if (head && head.length > 0) targetSocket.write(head);
+    socket.pipe(targetSocket);
+    targetSocket.pipe(socket);
+  });
+  targetSocket.on("error", () => {
+    socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+    socket.destroy();
+  });
+  socket.on("error", () => targetSocket.destroy());
+});
+
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`✓ Health server listening on port ${PORT}`);
   console.log(`✓ Dashboard: http://localhost:${PORT}/`);
   console.log(`✓ API proxy: http://localhost:${PORT}/api/*`);
