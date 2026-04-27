@@ -58,6 +58,19 @@ export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-paperclip-backup}"
 export PAPERCLIP_TELEMETRY_DISABLED="${PAPERCLIP_TELEMETRY_DISABLED:-1}"
 export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 
+# Derive public URL from HF Space host (auto-set by HF Spaces runtime)
+if [ -z "${PAPERCLIP_PUBLIC_URL}" ] && [ -n "${SPACE_HOST}" ]; then
+    export PAPERCLIP_PUBLIC_URL="https://${SPACE_HOST}"
+fi
+
+# Allow hostnames via env var (no CLI needed, comma-separated)
+# Includes localhost, 0.0.0.0, and the HF Space public hostname
+_ALLOWED="localhost,127.0.0.1,0.0.0.0"
+if [ -n "${SPACE_HOST}" ]; then
+    _ALLOWED="${_ALLOWED},${SPACE_HOST}"
+fi
+export PAPERCLIP_ALLOWED_HOSTNAMES="${PAPERCLIP_ALLOWED_HOSTNAMES:-${_ALLOWED}}"
+
 # Auto-generate BETTER_AUTH_SECRET if not provided
 # User-set secret (HF Space secret) always takes precedence
 AUTH_SECRET_FILE="${PAPERCLIP_HOME}/.auth-secret"
@@ -206,18 +219,8 @@ export DO_NOT_TRACK
 export PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
 export PAPERCLIP_INSTANCE_ID="${PAPERCLIP_INSTANCE_ID:-default}"
 export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
-
-# Allowlist hostnames Paperclip will accept connections from
-echo "Configuring allowed hostnames..."
-pnpm paperclipai allowed-hostname localhost 2>/dev/null || true
-pnpm paperclipai allowed-hostname 127.0.0.1 2>/dev/null || true
-pnpm paperclipai allowed-hostname 0.0.0.0 2>/dev/null || true
-# HF Spaces sets SPACE_HOST to the public URL (e.g. somratpro-huggingclip.hf.space)
-if [ -n "$SPACE_HOST" ]; then
-    pnpm paperclipai allowed-hostname "$SPACE_HOST" 2>/dev/null || true
-    echo "Allowed HF Space host: $SPACE_HOST"
-fi
-echo -e "${GREEN}✓ Hostnames configured${NC}"
+export PAPERCLIP_ALLOWED_HOSTNAMES
+export PAPERCLIP_PUBLIC_URL
 
 echo -e "${GREEN}✓ All systems ready${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"

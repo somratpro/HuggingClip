@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from huggingface_hub import HfApi
-from huggingface_hub.utils import RepositoryNotFoundError
+from huggingface_hub.utils import RepositoryNotFoundError, EntryNotFoundError
 
 # ============================================================================
 # Configuration
@@ -341,9 +341,9 @@ def sync_from_hf() -> bool:
                 local_dir=temp_dir,
                 local_dir_use_symlinks=False
             )
-        except RepositoryNotFoundError:
-            logger.info(f'No backup found in {dataset_id}')
-            return False
+        except (RepositoryNotFoundError, EntryNotFoundError):
+            logger.info(f'No backup found in {dataset_id} (first boot)')
+            return None  # not an error — just no backup yet
 
         logger.info(f'Downloaded backup from {dataset_id}')
 
@@ -446,18 +446,25 @@ def sync_from_backup() -> bool:
     try:
         success = sync_from_hf()
 
-        # Update status
-        status['db_status'] = 'connected' if success else 'error'
-        status['last_error'] = None if success else 'Restore failed'
-
-        write_status(status)
-
-        if success:
+        if success is None:
+            # No backup exists yet (first boot) — not an error
+            status['db_status'] = 'connected'
+            status['last_error'] = None
+            write_status(status)
+            logger.info('No prior backup found — fresh instance, DB ready')
+            return True
+        elif success:
+            status['db_status'] = 'connected'
+            status['last_error'] = None
+            write_status(status)
             logger.info('Restore operation completed successfully')
+            return True
         else:
-            logger.warning('Restore operation completed (no backup or error)')
-
-        return success
+            status['db_status'] = 'error'
+            status['last_error'] = 'Restore failed'
+            write_status(status)
+            logger.warning('Restore operation failed')
+            return False
 
     except Exception as e:
         logger.error(f'Restore operation failed: {e}')
