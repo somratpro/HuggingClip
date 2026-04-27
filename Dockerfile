@@ -16,8 +16,9 @@ RUN npm install -g pnpm
 # Install dependencies
 RUN pnpm install
 
-# Build Paperclip
-RUN pnpm build
+# Build Paperclip (match official Dockerfile: ui + server only, tsx handles db at runtime)
+RUN pnpm --filter @paperclipai/ui build
+RUN pnpm --filter @paperclipai/server build
 
 # Stage 2: Runtime
 FROM node:lts-trixie-slim

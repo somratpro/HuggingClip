@@ -232,5 +232,5 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Start Paperclip server (server/dist/index.js built from source)
-exec pnpm --filter @paperclipai/server start
+# Start Paperclip server with tsx loader (loads workspace .ts packages at runtime)
+exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js
