@@ -65,25 +65,39 @@ echo -e "${GREEN}✓ Environment validated${NC}\n"
 # ============================================================================
 echo -e "${BLUE}[2/8] Setting up PostgreSQL database...${NC}"
 
-# Start PostgreSQL if not running
-if ! pgrep -x "postgres" > /dev/null; then
-    echo "Starting PostgreSQL daemon..."
-    su - postgres -c "/usr/lib/postgresql/*/bin/postgres -D /var/lib/postgresql/data" &
-    POSTGRES_PID=$!
+# Detect installed PostgreSQL version
+PG_VERSION=$(ls /usr/lib/postgresql/ 2>/dev/null | sort -V | tail -1)
+if [ -z "$PG_VERSION" ]; then
+    echo -e "${RED}ERROR: PostgreSQL not found${NC}"
+    exit 1
+fi
+PG_DATA="/var/lib/postgresql/${PG_VERSION}/main"
+echo "PostgreSQL version: ${PG_VERSION}, data dir: ${PG_DATA}"
 
-    # Wait for PostgreSQL to start
-    sleep 3
-    until pg_isready -h localhost -U postgres 2>/dev/null; do
-        sleep 1
-    done
+# Initialize cluster if it doesn't exist yet
+if [ ! -f "${PG_DATA}/PG_VERSION" ]; then
+    echo "Initializing PostgreSQL cluster..."
+    pg_createcluster "${PG_VERSION}" main --locale=C.UTF-8
 fi
 
-# Create paperclip user and database if they don't exist
-psql -U postgres -tc "SELECT 1 FROM pg_user WHERE usename = 'postgres'" | grep -q 1 || \
-    psql -U postgres -c "CREATE USER postgres WITH PASSWORD 'paperclip' CREATEDB;" 2>/dev/null || true
+# Start cluster if not running
+if ! pg_ctlcluster "${PG_VERSION}" main status 2>/dev/null | grep -q "online"; then
+    echo "Starting PostgreSQL cluster..."
+    pg_ctlcluster "${PG_VERSION}" main start
+fi
 
+# Wait until ready
+until pg_isready -h localhost -U postgres 2>/dev/null; do
+    sleep 1
+done
+
+# Set postgres password and create paperclip DB
+psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'paperclip';" 2>/dev/null || true
 psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'paperclip'" | grep -q 1 || \
     psql -U postgres -c "CREATE DATABASE paperclip OWNER postgres;" 2>/dev/null || true
+
+# Export correct DATABASE_URL with detected version credentials
+export DATABASE_URL="${DATABASE_URL:-postgres://postgres:paperclip@localhost:5432/paperclip}"
 
 echo -e "${GREEN}✓ PostgreSQL ready${NC}\n"
 
