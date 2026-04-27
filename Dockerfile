@@ -5,19 +5,18 @@ WORKDIR /build
 
 RUN apt-get update && apt-get install -y \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable
 
 # Clone Paperclip (depth=1 for speed, uses repo's default branch)
 RUN git clone --depth=1 https://github.com/paperclipai/paperclip.git .
 
-# Install pnpm
-RUN npm install -g pnpm
-
-# Install dependencies
+# Install dependencies (corepack picks correct pnpm version from packageManager field)
 RUN pnpm install
 
-# Build Paperclip (match official Dockerfile: ui + server only, tsx handles db at runtime)
+# Build Paperclip (match official Dockerfile order)
 RUN pnpm --filter @paperclipai/ui build
+RUN pnpm --filter @paperclipai/plugin-sdk build
 RUN pnpm --filter @paperclipai/server build
 
 # Stage 2: Runtime
@@ -49,7 +48,7 @@ RUN pip install --no-cache-dir --break-system-packages huggingface_hub PyYAML
 COPY --from=paperclip-builder /build /app/paperclip
 
 # Ensure pnpm is available in runtime stage
-RUN npm install -g pnpm
+RUN corepack enable
 
 # Copy orchestration files
 COPY start.sh /app/
