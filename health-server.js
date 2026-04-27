@@ -13,7 +13,11 @@ const PAPERCLIP_PORT = 3100;
 
 // Middleware
 app.use(cors());
-app.use(morgan("combined"));
+// Skip logging for health polling and static assets — too noisy
+app.use(morgan("tiny", {
+  skip: (req) => req.path === "/health" || req.path === "/sw.js" ||
+                 req.path.startsWith("/assets/") || req.path === "/favicon.ico"
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -183,6 +187,7 @@ app.all("/api/*", async (req, res) => {
 
 // Catch-all: proxy /assets/*, /site.webmanifest, /favicon.* and any other
 // paths Paperclip's UI references with absolute URLs directly to Paperclip.
+// Note: /health is handled above and never reaches here.
 app.all("*", async (req, res) => {
   const targetUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}${req.url}`;
 
@@ -775,8 +780,8 @@ function getDashboardHTML() {
         // Initial update
         updateStatus();
 
-        // Update every 5 seconds
-        setInterval(updateStatus, 5000);
+        // Update every 30 seconds — reduce log noise
+        setInterval(updateStatus, 30000);
     </script>
 </body>
 </html>`;
