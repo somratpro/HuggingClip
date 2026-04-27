@@ -250,5 +250,19 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
+# Generate first admin invite URL if no admin exists yet
+# Runs against the database directly (no server needed) and prints the URL to logs
+echo -e "${BLUE}[8/8] Bootstrapping admin account...${NC}"
+BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1)
+if echo "$BOOTSTRAP_OUTPUT" | grep -qi "invite\|http\|url\|link"; then
+    echo -e "${GREEN}✓ Admin invite URL:${NC}"
+    echo "$BOOTSTRAP_OUTPUT"
+    echo -e "${YELLOW}Copy the URL above to complete first-time setup.${NC}\n"
+elif echo "$BOOTSTRAP_OUTPUT" | grep -qi "already\|exists\|skip"; then
+    echo -e "${GREEN}✓ Admin account already exists${NC}\n"
+else
+    echo -e "${YELLOW}Bootstrap output: ${BOOTSTRAP_OUTPUT}${NC}\n"
+fi
+
 # Start Paperclip server with tsx loader (loads workspace .ts packages at runtime)
 exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js

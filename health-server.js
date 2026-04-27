@@ -57,7 +57,7 @@ app.get("/health", async (req, res) => {
         lastSync: syncStatus.last_sync_time,
         nextSync: syncStatus.last_sync_time
           ? new Date(
-              syncStatus.last_sync_time +
+              new Date(syncStatus.last_sync_time).getTime() +
                 parseInt(process.env.SYNC_INTERVAL || 180) * 1000,
             ).toISOString()
           : null,

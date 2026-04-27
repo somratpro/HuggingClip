@@ -220,12 +220,9 @@ def sync_to_hf(backup_file: str) -> bool:
 
         dataset_id = f'{username}/{BACKUP_DATASET_NAME}'
 
-        # Create dataset if it doesn't exist
-        try:
-            logger.info(f'Using dataset: {dataset_id}')
-        except RepositoryNotFoundError:
-            logger.info(f'Creating dataset: {dataset_id}')
-            api.create_repo(repo_id=dataset_id, repo_type='dataset', private=True, exist_ok=True)
+        # Ensure dataset exists (creates private dataset on first run)
+        api.create_repo(repo_id=dataset_id, repo_type='dataset', private=True, exist_ok=True)
+        logger.info(f'Using dataset: {dataset_id}')
 
         # Upload file
         api.upload_file(
