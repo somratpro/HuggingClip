@@ -277,14 +277,21 @@ done
 if [ "$PAPERCLIP_READY" = true ]; then
     echo -e "${BLUE}Bootstrapping admin account...${NC}"
     BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
-    if echo "$BOOTSTRAP_OUTPUT" | grep -q "http"; then
-        INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep -o 'https\?://[^ ]*' | head -1)
-        echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║  ADMIN SETUP URL (open in browser):          ║${NC}"
-        echo -e "${GREEN}║  ${INVITE_URL}                               ║${NC}"
-        echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+    # Extract URL from the specific "Invite URL: ..." line, stripping ANSI color codes
+    INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep "Invite URL:" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' | grep -o 'https\?://[^ ]*' | head -1)
+    if [ -n "$INVITE_URL" ]; then
+        # Save invite URL for health dashboard to display
+        echo "$INVITE_URL" > /tmp/invite-url.txt
+        echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║  ADMIN SETUP — open this URL in your browser:            ║${NC}"
+        echo -e "${GREEN}║                                                          ║${NC}"
+        echo -e "  ${INVITE_URL}"
+        echo -e "${GREEN}║                                                          ║${NC}"
+        echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     else
-        echo -e "${GREEN}✓ Admin account ready${NC}"
+        # Clear any stale invite URL file
+        rm -f /tmp/invite-url.txt
+        echo -e "${GREEN}✓ Admin account already configured${NC}"
     fi
 else
     echo -e "${YELLOW}Warning: Paperclip did not become ready in 90s${NC}"

@@ -29,11 +29,14 @@ app.get("/health", async (req, res) => {
     // Try to check if Paperclip is responding
     const paperclipStatus = await checkPaperclipHealth();
 
+    const inviteUrl = readInviteUrl();
+
     res.status(200).json({
       status: "healthy",
       timestamp: new Date().toISOString(),
       uptime: Math.floor(uptime),
       startTime: new Date(Date.now() - uptime * 1000).toISOString(),
+      setupUrl: inviteUrl || null,
       services: {
         healthServer: {
           status: "running",
@@ -225,6 +228,17 @@ function readSyncStatus() {
     last_error: null,
     sync_count: 0,
   };
+}
+
+function readInviteUrl() {
+  try {
+    if (fs.existsSync("/tmp/invite-url.txt")) {
+      return fs.readFileSync("/tmp/invite-url.txt", "utf8").trim();
+    }
+  } catch (error) {
+    // ignore
+  }
+  return null;
 }
 
 function checkPaperclipHealth() {
@@ -516,6 +530,56 @@ function getDashboardHTML() {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+
+        .setup-banner {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border-radius: 12px;
+            padding: 24px 28px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px rgba(245, 158, 11, 0.4);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .setup-banner h2 {
+            font-size: 1.3em;
+            margin-bottom: 10px;
+        }
+
+        .setup-banner p {
+            opacity: 0.9;
+            margin-bottom: 16px;
+            font-size: 0.95em;
+        }
+
+        .setup-banner .invite-link {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .setup-banner .btn-setup {
+            display: inline-block;
+            background: white;
+            color: #d97706;
+            font-weight: 700;
+            padding: 10px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+
+        .setup-banner .btn-setup:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body>
@@ -523,6 +587,14 @@ function getDashboardHTML() {
         <div class="header">
             <h1>📎 HuggingClip</h1>
             <p>Paperclip AI Agent Orchestration on Hugging Face Spaces</p>
+        </div>
+
+        <!-- First-time Setup Banner (hidden by default, shown if invite URL exists) -->
+        <div class="setup-banner" id="setup-banner" style="display:none;">
+            <h2>🔑 Admin Setup Required</h2>
+            <p>No admin account exists yet. Open the link below to create your first admin account, then complete onboarding to start using Paperclip.</p>
+            <span class="invite-link" id="invite-url-text">Loading...</span>
+            <a href="#" class="btn-setup" id="invite-url-link" target="_blank">Open Setup Page &rarr;</a>
         </div>
 
         <div class="grid">
@@ -682,6 +754,16 @@ function getDashboardHTML() {
                 const startTimeEl = document.getElementById('start-time');
                 const startTime = new Date(data.startTime).toLocaleString();
                 startTimeEl.textContent = startTime;
+
+                // Show setup banner if invite URL exists
+                const setupBanner = document.getElementById('setup-banner');
+                if (data.setupUrl) {
+                    document.getElementById('invite-url-text').textContent = data.setupUrl;
+                    document.getElementById('invite-url-link').href = data.setupUrl;
+                    setupBanner.style.display = 'block';
+                } else {
+                    setupBanner.style.display = 'none';
+                }
 
                 // Update footer time
                 document.getElementById('footer-time').textContent = new Date().toLocaleString();
