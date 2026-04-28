@@ -185,7 +185,7 @@ docker-compose up -d
 
 ### Dashboard
 
-Access the health monitoring dashboard at: `http://your-space-url/`
+Access the health monitoring dashboard at: `http://your-space-url/_status`
 
 **Shows:**
 
@@ -196,7 +196,7 @@ Access the health monitoring dashboard at: `http://your-space-url/`
 
 ### Paperclip UI
 
-Full Paperclip interface at: `http://your-space-url/app/`
+Full Paperclip interface at: `http://your-space-url/`
 
 **Features:**
 
@@ -277,7 +277,7 @@ python3 /app/paperclip-sync.py restore
 
 ### Paperclip Not Accessible
 
-**Problem**: Can't reach <http://localhost:7861/app/>
+**Problem**: Can't reach <http://localhost:7861/>
 
 **Solution:**
 
@@ -345,7 +345,7 @@ python3 /app/paperclip-sync.py restore
 
 ```
 ┌─────────────────┐
-│  Paperclip UI   │ (http://space-url/app/)
+│  Paperclip UI   │ (http://space-url/)
 │  & REST API     │
 └────────┬────────┘
          │

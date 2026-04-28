@@ -112,9 +112,16 @@ else
 fi
 
 # ── Cloudflare Proxy ──────────────────────────────────────────────────────────
-if [ -n "${CLOUDFLARE_WORKERS_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+if [ -n "${CLOUDFLARE_WORKERS_TOKEN:-}" ]; then
     echo "Setting up Cloudflare proxy..."
     python3 /app/cloudflare-proxy-setup.py 2>&1 || echo "Cloudflare setup failed, continuing without proxy"
+fi
+
+# Source CF proxy env if the setup script wrote it (provides CLOUDFLARE_PROXY_URL + SECRET)
+_CF_ENV="/tmp/huggingclaw-cloudflare-proxy.env"
+if [ -f "${_CF_ENV}" ]; then
+    # shellcheck source=/dev/null
+    . "${_CF_ENV}"
 fi
 
 # ── Load Cloudflare module if present ─────────────────────────────────────────
@@ -251,8 +258,8 @@ fi
 
 echo "HuggingClip is ready!"
 echo ""
-echo "  Health dashboard : http://localhost:7861/"
-echo "  Paperclip UI     : http://localhost:7861/app/"
+echo "  Health dashboard : http://localhost:7861/_status"
+echo "  Paperclip UI     : http://localhost:7861/"
 echo "  API              : http://localhost:7861/api/"
 echo ""
 

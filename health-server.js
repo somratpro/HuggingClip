@@ -9,7 +9,7 @@ const net = require("net");
 
 const app = express();
 const PORT = 7861; // always public-facing port, never read from PORT (that's for Paperclip)
-const PAPERCLIP_HOST = process.env.HOST || "127.0.0.1";
+const PAPERCLIP_HOST = "127.0.0.1";
 const PAPERCLIP_PORT = 3100;
 
 // Middleware
@@ -84,12 +84,16 @@ app.get("/health", async (req, res) => {
 // ============================================================================
 // Dashboard Route
 // ============================================================================
-app.get("/", (req, res) => {
+app.get("/_status", (req, res) => {
+  res.send(getDashboardHTML());
+});
+
+app.get("/_status/", (req, res) => {
   res.send(getDashboardHTML());
 });
 
 app.get("/dashboard/", (req, res) => {
-  res.send(getDashboardHTML());
+  res.redirect("/_status");
 });
 
 app.get("/dashboard/status", (req, res) => {
@@ -131,34 +135,6 @@ app.post("/dashboard/uptimerobot/setup", (req, res) => {
 // ============================================================================
 // Reverse Proxy Routes
 // ============================================================================
-
-// Proxy all /app/* requests to Paperclip
-app.all("/app/*", async (req, res) => {
-  const targetPath = req.path.replace("/app", "") || "/";
-  const targetUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}${targetPath}`;
-
-  try {
-    const response = await proxyRequest(
-      req.method,
-      targetUrl,
-      req.headers,
-      req.body,
-    );
-
-    // Copy response headers
-    Object.keys(response.headers).forEach((key) => {
-      res.setHeader(key, response.headers[key]);
-    });
-
-    res.status(response.statusCode).send(response.body);
-  } catch (error) {
-    console.error(`Proxy error: ${error.message}`);
-    res.status(503).json({
-      error: "Paperclip service unavailable",
-      details: error.message,
-    });
-  }
-});
 
 // Proxy all /api/* requests to Paperclip
 app.all("/api/*", async (req, res) => {
@@ -623,10 +599,10 @@ function getDashboardHTML() {
                 </div>
                 <div class="stat">
                     <span class="stat-label">UI URL</span>
-                    <span class="stat-value"><span class="code">/app/</span></span>
+                    <span class="stat-value"><span class="code">/</span></span>
                 </div>
                 <div class="button-group">
-                    <a href="/app/" class="button button-primary" target="_blank">Open Paperclip UI</a>
+                    <a href="/" class="button button-primary" target="_blank">Open Paperclip UI</a>
                 </div>
             </div>
 
@@ -684,7 +660,7 @@ function getDashboardHTML() {
             <div class="card">
                 <h2>📚 Resources</h2>
                 <div class="button-group" style="flex-direction: column;">
-                    <a href="/app/" class="button button-primary" target="_blank">Paperclip Dashboard</a>
+                    <a href="/" class="button button-primary" target="_blank">Paperclip Dashboard</a>
                     <a href="/api/" class="button button-secondary" target="_blank">API Reference</a>
                 </div>
                 <div class="stat" style="margin-top: 16px;">
@@ -819,5 +795,5 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`✓ Health server listening on port ${PORT}`);
   console.log(`✓ Dashboard: http://localhost:${PORT}/`);
   console.log(`✓ API proxy: http://localhost:${PORT}/api/*`);
-  console.log(`✓ App proxy: http://localhost:${PORT}/app/`);
+  console.log(`✓ App proxy: http://localhost:${PORT}/  (root → Paperclip)`);
 });
