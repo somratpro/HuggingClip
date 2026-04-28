@@ -11,6 +11,13 @@ RUN apt-get update && apt-get install -y \
 # Clone Paperclip (depth=1 for speed, uses repo's default branch)
 RUN git clone --depth=1 https://github.com/paperclipai/paperclip.git .
 
+# Patch firstBlockedChainFinding to cap chain depth at 500.
+# Default 1MB stack overflows on deep recovery-issue chains created by
+# runaway agents. Cycle detection is already in place via the Set; we
+# add a size cap so deep linear chains short-circuit instead of crashing.
+RUN sed -i 's|if (seen.has(current.id))|if (seen.size > 500 || seen.has(current.id))|' \
+    server/src/services/recovery/issue-graph-liveness.ts
+
 # Install dependencies (corepack picks correct pnpm version from packageManager field)
 RUN pnpm install
 
