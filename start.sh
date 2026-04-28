@@ -212,6 +212,37 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
+# ── Purge orphaned heartbeat run that triggers recovery stack overflow ───────
+ORPHAN_RUN_ID="1fc2bf0e-f983-4ec7-b941-2df338d53ab4"
+echo "Purging orphaned run ${ORPHAN_RUN_ID} from all UUID columns..."
+su - postgres -c "psql paperclip" <<SQLEOF >/dev/null 2>&1 || true
+\echo 'Heartbeat/run tables:'
+SELECT tablename FROM pg_tables
+ WHERE schemaname='public'
+   AND (tablename LIKE '%heartbeat%' OR tablename LIKE '%run%');
+
+DO \$\$
+DECLARE
+    rec RECORD;
+    rid uuid := '${ORPHAN_RUN_ID}';
+BEGIN
+    FOR rec IN
+        SELECT n.nspname AS s, t.relname AS tn, a.attname AS cn
+          FROM pg_attribute a
+          JOIN pg_class t ON a.attrelid = t.oid
+          JOIN pg_namespace n ON t.relnamespace = n.oid
+          JOIN pg_type ty ON a.atttypid = ty.oid
+         WHERE n.nspname='public' AND t.relkind='r'
+           AND ty.typname='uuid' AND NOT a.attisdropped
+    LOOP
+        BEGIN
+            EXECUTE format('DELETE FROM %I.%I WHERE %I = \$1', rec.s, rec.tn, rec.cn) USING rid;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+    END LOOP;
+END \$\$;
+SQLEOF
+
 # ── Launch Paperclip ──────────────────────────────────────────────────────────
 echo "Starting Paperclip..."
 node --unhandled-rejections=none --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
