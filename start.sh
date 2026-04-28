@@ -212,12 +212,9 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
-# Reset stale running agent runs — prevents stack overflow in startup recovery
-su - postgres -c "psql paperclip -c \"UPDATE agent_run SET status='failed' WHERE status='running';\"" >/dev/null 2>&1 || true
-
 # ── Launch Paperclip ──────────────────────────────────────────────────────────
 echo "Starting Paperclip..."
-node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
+node --stack-size=65536 --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 PAPERCLIP_PID=$!
 
 # Wait for API ready (max 90s)
