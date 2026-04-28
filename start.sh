@@ -214,7 +214,7 @@ trap cleanup SIGTERM SIGINT
 
 # ── Launch Paperclip ──────────────────────────────────────────────────────────
 echo "Starting Paperclip..."
-node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
+node --unhandled-rejections=none --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 PAPERCLIP_PID=$!
 
 # Wait for API ready (max 90s)
