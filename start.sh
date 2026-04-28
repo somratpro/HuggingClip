@@ -230,7 +230,7 @@ done
 
 if [ "$PAPERCLIP_READY" = true ]; then
     BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
-    INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep "Invite URL:" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' | grep -o 'https\?://[^ ]*' | head -1)
+    INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep "Invite URL:" 2>/dev/null | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' | grep -o 'https\?://[^ ]*' | head -1 || true)
     if [ -n "$INVITE_URL" ]; then
         echo "$INVITE_URL" > /tmp/invite-url.txt
         echo ""
