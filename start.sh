@@ -258,8 +258,8 @@ fi
 
 echo "HuggingClip is ready!"
 echo ""
-echo "  Health dashboard : http://localhost:7861/_status"
-echo "  Paperclip UI     : http://localhost:7861/"
+echo "  Health dashboard : http://localhost:7861/"
+echo "  Paperclip UI     : http://localhost:7861/app/"
 echo "  API              : http://localhost:7861/api/"
 echo ""
 

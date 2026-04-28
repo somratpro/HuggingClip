@@ -84,6 +84,10 @@ app.get("/health", async (req, res) => {
 // ============================================================================
 // Dashboard Route
 // ============================================================================
+app.get("/", (req, res) => {
+  res.send(getDashboardHTML());
+});
+
 app.get("/_status", (req, res) => {
   res.send(getDashboardHTML());
 });
@@ -93,7 +97,7 @@ app.get("/_status/", (req, res) => {
 });
 
 app.get("/dashboard/", (req, res) => {
-  res.redirect("/_status");
+  res.redirect("/");
 });
 
 app.get("/dashboard/status", (req, res) => {
@@ -135,6 +139,24 @@ app.post("/dashboard/uptimerobot/setup", (req, res) => {
 // ============================================================================
 // Reverse Proxy Routes
 // ============================================================================
+
+// Proxy /app/* to Paperclip, stripping the /app prefix.
+// The SPA is built with BrowserRouter basename="/app" so React Router
+// strips the prefix on the client — Paperclip receives clean paths.
+app.all("/app/*", async (req, res) => {
+  const targetPath = req.path.replace("/app", "") || "/";
+  const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  const targetUrl = `http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}${targetPath}${query}`;
+
+  try {
+    const response = await proxyRequest(req.method, targetUrl, req.headers, req.body);
+    Object.keys(response.headers).forEach((key) => res.setHeader(key, response.headers[key]));
+    res.status(response.statusCode).send(response.body);
+  } catch (error) {
+    console.error(`Proxy error: ${error.message}`);
+    res.status(503).json({ error: "Paperclip service unavailable", details: error.message });
+  }
+});
 
 // Proxy all /api/* requests to Paperclip
 app.all("/api/*", async (req, res) => {
@@ -599,10 +621,10 @@ function getDashboardHTML() {
                 </div>
                 <div class="stat">
                     <span class="stat-label">UI URL</span>
-                    <span class="stat-value"><span class="code">/</span></span>
+                    <span class="stat-value"><span class="code">/app/</span></span>
                 </div>
                 <div class="button-group">
-                    <a href="/" class="button button-primary" target="_blank">Open Paperclip UI</a>
+                    <a href="/app/" class="button button-primary" target="_blank">Open Paperclip UI</a>
                 </div>
             </div>
 
@@ -660,7 +682,7 @@ function getDashboardHTML() {
             <div class="card">
                 <h2>📚 Resources</h2>
                 <div class="button-group" style="flex-direction: column;">
-                    <a href="/" class="button button-primary" target="_blank">Paperclip Dashboard</a>
+                    <a href="/app/" class="button button-primary" target="_blank">Paperclip Dashboard</a>
                     <a href="/api/" class="button button-secondary" target="_blank">API Reference</a>
                 </div>
                 <div class="stat" style="margin-top: 16px;">

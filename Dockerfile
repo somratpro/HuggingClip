@@ -11,6 +11,12 @@ RUN apt-get update && apt-get install -y \
 # Clone Paperclip (depth=1 for speed, uses repo's default branch)
 RUN git clone --depth=1 https://github.com/paperclipai/paperclip.git .
 
+# Patch React Router to use /app as basename so the health dashboard owns /
+# Without this, <BrowserRouter> sees the full path "/app/" and treats "app"
+# as a company prefix, showing "Company not found".
+RUN sed -i 's|<BrowserRouter>|<BrowserRouter basename="/app">|' ui/src/main.tsx && \
+    grep -q 'basename="/app"' ui/src/main.tsx || (echo "PATCH NOT APPLIED to main.tsx" && exit 1)
+
 # Patch firstBlockedChainFinding to cap chain depth at 500.
 # Default 1MB stack overflows on deep recovery-issue chains created by
 # runaway agents. Cycle detection is already in place via the Set; we
