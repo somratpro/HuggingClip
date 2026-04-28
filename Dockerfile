@@ -15,8 +15,10 @@ RUN git clone --depth=1 https://github.com/paperclipai/paperclip.git .
 # Default 1MB stack overflows on deep recovery-issue chains created by
 # runaway agents. Cycle detection is already in place via the Set; we
 # add a size cap so deep linear chains short-circuit instead of crashing.
-RUN sed -i 's|if (seen.has(current.id))|if (seen.size > 500 || seen.has(current.id))|' \
-    server/src/services/recovery/issue-graph-liveness.ts
+RUN PATCH_FILE=server/src/services/recovery/issue-graph-liveness.ts && \
+    test -f "$PATCH_FILE" || (echo "PATCH FILE MISSING: $PATCH_FILE" && find . -name "issue-graph-liveness*" && exit 1) && \
+    sed -i 's/seen\.has(current\.id)/(seen.size > 500 || seen.has(current.id))/' "$PATCH_FILE" && \
+    grep -q "seen.size > 500" "$PATCH_FILE" || (echo "PATCH NOT APPLIED" && head -520 "$PATCH_FILE" | tail -30 && exit 1)
 
 # Install dependencies (corepack picks correct pnpm version from packageManager field)
 RUN pnpm install
