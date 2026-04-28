@@ -542,15 +542,6 @@ function renderDashboard(initialData) {
             ${keepAwakeHtml}
         </div>
 
-        <div class="stat-card" style="margin-top: 20px;">
-            <span class="stat-label">Resources</span>
-            <div class="links-row">
-                <a href="/app/" class="link-btn link-primary" target="_blank">Paperclip UI</a>
-                <a href="/api/health" class="link-btn link-secondary" target="_blank">API Health</a>
-                <a href="https://paperclip.ing" class="link-btn link-secondary" target="_blank" rel="noopener noreferrer">Docs</a>
-            </div>
-        </div>
-
         <div class="footer">Live updates every 30s</div>
     </div>
 

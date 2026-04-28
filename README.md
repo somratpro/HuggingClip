@@ -266,11 +266,31 @@ Reduce `SYNC_MAX_FILE_BYTES` to skip large backups, or increase it. Alternativel
 **Stack overflow in recovery chains**
 Deep issue-dependency chains (1000+ nodes) created by runaway agents can hit a 500-node limit in the upstream recovery graph traversal. This is patched conservatively in the Dockerfile. File an issue upstream at [paperclipai/paperclip](https://github.com/paperclipai/paperclip) if you need larger chains.
 
+## 🌟 More Projects
+
+Similar projects by [@somratpro](https://github.com/somratpro) — all free, one-click deploy on HF Spaces:
+
+| Project | What it runs | HF Space | GitHub |
+| :--- | :--- | :--- | :--- |
+| **HuggingClaw** | OpenClaw — Claude Code in the browser | [Space](https://huggingface.co/spaces/somratpro/HuggingClaw) | [Repo](https://github.com/somratpro/huggingclaw) |
+| **Hugging8n** | n8n — workflow & automation platform | [Space](https://huggingface.co/spaces/somratpro/Hugging8n) | [Repo](https://github.com/somratpro/hugging8n) |
+
 ## 📚 Links
 
 - [Paperclip Docs](https://paperclip.ing)
 - [Paperclip GitHub](https://github.com/paperclipai/paperclip)
 - [HuggingFace Spaces Docs](https://huggingface.co/docs/hub/spaces)
+
+## ❤️ Support
+
+If HuggingClip saves you time, consider buying me a coffee to keep the projects alive!
+
+**USDT (TRC-20 / TRON network only)**
+```
+TELx8TJz1W1h7n6SgpgGNNGZXpJCEUZrdB
+```
+> [!WARNING]
+> Send **USDT on TRC-20 network only**. Sending other tokens or using a different network will result in permanent loss.
 
 ## 🤝 Contributing
 
