@@ -41,7 +41,6 @@ DATABASE_URL = os.environ.get('DATABASE_URL', 'postgres://postgres:paperclip@loc
 BACKUP_DATASET_NAME = os.environ.get('BACKUP_DATASET_NAME', 'paperclip-backup')
 SYNC_MAX_FILE_BYTES = int(os.environ.get('SYNC_MAX_FILE_BYTES', '52428800'))  # 50MB
 PAPERCLIP_HOME = os.environ.get('PAPERCLIP_HOME', '/paperclip')
-
 # Status file for dashboard
 STATUS_FILE = Path('/tmp/sync-status.json')
 
@@ -202,9 +201,7 @@ def create_backup_tarball(dump_file: str) -> tuple[str, bool]:
         return None, False
 
 def sync_to_hf(backup_file: str) -> bool:
-    """
-    Upload backup tarball to Hugging Face Dataset.
-    """
+    """Upload backup tarball to Hugging Face Dataset."""
     if not HF_TOKEN:
         logger.warning('HF_TOKEN not set - skipping backup upload')
         return False
@@ -214,7 +211,6 @@ def sync_to_hf(backup_file: str) -> bool:
     try:
         api = HfApi(token=HF_TOKEN)
 
-        # Get username if not provided
         username = HF_USERNAME
         if not username:
             try:
@@ -226,11 +222,9 @@ def sync_to_hf(backup_file: str) -> bool:
 
         dataset_id = f'{username}/{BACKUP_DATASET_NAME}'
 
-        # Ensure dataset exists (creates private dataset on first run)
         api.create_repo(repo_id=dataset_id, repo_type='dataset', private=True, exist_ok=True)
         logger.info(f'Using dataset: {dataset_id}')
 
-        # Upload file
         api.upload_file(
             path_or_fileobj=backup_file,
             path_in_repo='snapshots/latest.tar.gz',
@@ -333,9 +327,7 @@ def sync_from_hf() -> bool:
 
         dataset_id = f'{username}/{BACKUP_DATASET_NAME}'
 
-        # Download latest backup
         temp_dir = tempfile.mkdtemp()
-        backup_path = Path(temp_dir) / 'latest.tar.gz'
 
         try:
             snapshot_path = api.hf_hub_download(

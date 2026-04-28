@@ -63,6 +63,14 @@ if [ -z "${PAPERCLIP_AGENT_JWT_SECRET:-}" ]; then
     fi
 fi
 
+# ── Validate LLM providers ───────────────────────────────────────────────────
+if [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
+    echo "⚠️  WARNING: No LLM provider configured"
+    echo "   Set at least one of: GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY"
+    echo "   Agents will fail to run without an LLM provider"
+    echo ""
+fi
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo "  ╔════════════════════════════════════╗"
@@ -98,15 +106,41 @@ until pg_isready -h localhost -U postgres >/dev/null 2>&1; do
     sleep 1
 done
 
-su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'paperclip';\"" >/dev/null 2>&1 || true
+# Generate random DB password on first run (don't hardcode 'paperclip')
+DB_PASSWORD_FILE="${PAPERCLIP_HOME}/.db-password"
+if [ ! -f "${DB_PASSWORD_FILE}" ]; then
+    DB_PASSWORD=$(openssl rand -base64 24)
+    echo "$DB_PASSWORD" > "${DB_PASSWORD_FILE}"
+    chmod 600 "${DB_PASSWORD_FILE}"
+else
+    DB_PASSWORD=$(cat "${DB_PASSWORD_FILE}")
+fi
+export PGPASSWORD="${DB_PASSWORD}"
+
+su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD '${DB_PASSWORD}';\"" >/dev/null 2>&1 || true
 su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'paperclip'\" | grep -q 1 || psql -c \"CREATE DATABASE paperclip OWNER postgres;\"" >/dev/null 2>&1 || true
+
+# Update DATABASE_URL with generated password (if not explicitly set)
+if [[ "$DATABASE_URL" == *"postgres:paperclip"* ]]; then
+    export DATABASE_URL="postgres://postgres:${DB_PASSWORD}@localhost:5432/paperclip"
+fi
 
 echo "PostgreSQL ready (v${PG_VERSION})"
 
 # ── Restore from HF Dataset ───────────────────────────────────────────────────
+SYNC_STATUS_FILE="/tmp/sync-status.json"
 if [ -n "${HF_TOKEN:-}" ]; then
     echo "Restoring persisted data from HF Dataset..."
     python3 /app/paperclip-sync.py restore 2>&1 || true
+
+    # Check if last sync failed
+    if [ -f "${SYNC_STATUS_FILE}" ]; then
+        LAST_ERROR=$(python3 -c "import json; f=open('${SYNC_STATUS_FILE}'); d=json.load(f); print(d.get('last_error', ''))" 2>/dev/null || true)
+        if [ -n "$LAST_ERROR" ]; then
+            echo "⚠️  WARNING: Last backup sync failed: $LAST_ERROR"
+            echo "   Data may not be persisted to HF Dataset"
+        fi
+    fi
 else
     echo "HF_TOKEN not set — running without backup persistence"
 fi
@@ -209,12 +243,23 @@ fi
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 cleanup() {
     echo "Shutting down — syncing data..."
+
+    # Stop services
+    [ -n "${HEALTH_PID:-}" ]    && kill "$HEALTH_PID"    2>/dev/null || true
+    [ -n "${PAPERCLIP_PID:-}" ] && kill "$PAPERCLIP_PID" 2>/dev/null || true
+
+    # Kill background sync loop, then wait for it to exit before running final sync
+    # (avoids concurrent writes: kill stops the loop, wait confirms it's done)
+    if [ -n "${SYNC_PID:-}" ]; then
+        kill "$SYNC_PID" 2>/dev/null || true
+        wait "$SYNC_PID" 2>/dev/null || true
+    fi
+
+    # Run final backup sync
     if [ -n "${HF_TOKEN:-}" ]; then
         python3 /app/paperclip-sync.py sync 2>&1 || true
     fi
-    [ -n "${HEALTH_PID:-}" ] && kill "$HEALTH_PID" 2>/dev/null || true
-    [ -n "${SYNC_PID:-}" ]   && kill "$SYNC_PID"  2>/dev/null || true
-    [ -n "${PAPERCLIP_PID:-}" ] && kill "$PAPERCLIP_PID" 2>/dev/null || true
+
     exit 0
 }
 trap cleanup SIGTERM SIGINT

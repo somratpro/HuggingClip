@@ -11,23 +11,21 @@ RUN apt-get update && apt-get install -y \
 # Clone Paperclip (depth=1 for speed, uses repo's default branch)
 RUN git clone --depth=1 https://github.com/paperclipai/paperclip.git .
 
-# Patch React Router to use /app as basename so the health dashboard owns /
-# Without this, <BrowserRouter> sees the full path "/app/" and treats "app"
-# as a company prefix, showing "Company not found".
-RUN sed -i 's|<BrowserRouter>|<BrowserRouter basename="/app">|' ui/src/main.tsx && \
-    grep -q 'basename="/app"' ui/src/main.tsx || (echo "PATCH NOT APPLIED to main.tsx" && exit 1)
-
-# Patch firstBlockedChainFinding to cap chain depth at 500.
-# Default 1MB stack overflows on deep recovery-issue chains created by
-# runaway agents. Cycle detection is already in place via the Set; we
-# add a size cap so deep linear chains short-circuit instead of crashing.
-RUN PATCH_FILE=server/src/services/recovery/issue-graph-liveness.ts && \
-    test -f "$PATCH_FILE" || (echo "PATCH FILE MISSING: $PATCH_FILE" && find . -name "issue-graph-liveness*" && exit 1) && \
-    sed -i 's/seen\.has(current\.id)/(seen.size > 500 || seen.has(current.id))/' "$PATCH_FILE" && \
-    grep -q "seen.size > 500" "$PATCH_FILE" || (echo "PATCH NOT APPLIED" && head -520 "$PATCH_FILE" | tail -30 && exit 1)
+# Copy lock files early for cache efficiency: lock changes don't re-clone
+RUN ls -la pnpm-lock.yaml package.json 2>/dev/null || true
 
 # Install dependencies (corepack picks correct pnpm version from packageManager field)
 RUN pnpm install
+
+# Apply both patches in a single layer (reduces layer count, cleaner git history)
+# Patch 1: React Router basename for /app path handling
+# Patch 2: Recovery chain depth cap at 500 to prevent stack overflow
+RUN sed -i 's|<BrowserRouter>|<BrowserRouter basename="/app">|' ui/src/main.tsx && \
+    grep -q 'basename="/app"' ui/src/main.tsx || (echo "PATCH 1 FAILED: React Router basename not applied" && exit 1) && \
+    PATCH_FILE=server/src/services/recovery/issue-graph-liveness.ts && \
+    test -f "$PATCH_FILE" || (echo "PATCH 2 FAILED: File not found: $PATCH_FILE" && exit 1) && \
+    sed -i 's/seen\.has(current\.id)/(seen.size > 500 || seen.has(current.id))/' "$PATCH_FILE" && \
+    grep -q "seen.size > 500" "$PATCH_FILE" || (echo "PATCH 2 FAILED: Chain depth cap not applied" && exit 1)
 
 # Build Paperclip (match official Dockerfile order)
 RUN pnpm --filter @paperclipai/ui build
