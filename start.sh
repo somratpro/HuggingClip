@@ -1,50 +1,9 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 umask 0077
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Banner
-echo -e "${BLUE}"
-cat << 'EOF'
-   ___  ___                _____ _ _
-  / _ \/ _ \___ __________/ ___/| (_)____
- / ___/ ___/ _ `/ ___/ ___/\__ \ | | / __ \
-/ /  / /  / /_/ / /  / /__/__/ / | | / /_/ /
-\_/  \_/  \__,_/_/   \___/____/ |_|_/ .___/
-                                    /_/
-EOF
-echo -e "${NC}${GREEN}Starting HuggingClip (Paperclip on HF Spaces)${NC}\n"
-
-# ============================================================================
-# 1. Validate Environment Variables
-# ============================================================================
-echo -e "${BLUE}[1/8] Validating environment variables...${NC}"
-
-REQUIRED_VARS=("HF_TOKEN")
-MISSING_VARS=()
-
-for var in "${REQUIRED_VARS[@]}"; do
-    if [ -z "${!var}" ]; then
-        MISSING_VARS+=("$var")
-    fi
-done
-
-if [ ${#MISSING_VARS[@]} -gt 0 ]; then
-    echo -e "${YELLOW}Warning: Missing env vars: ${MISSING_VARS[*]}${NC}"
-    echo -e "${YELLOW}Backup to HF Dataset will be disabled${NC}"
-    SYNC_DISABLED=true
-else
-    SYNC_DISABLED=false
-fi
-
-# Default values
+# ── Config ────────────────────────────────────────────────────────────────────
 export DATABASE_URL="${DATABASE_URL:-postgres://postgres:paperclip@localhost:5432/paperclip}"
 export PORT="${PORT:-3100}"
 export SERVE_UI="${SERVE_UI:-true}"
@@ -52,118 +11,119 @@ export NODE_ENV="${NODE_ENV:-production}"
 export HOST="${HOST:-0.0.0.0}"
 export PAPERCLIP_HOME="${PAPERCLIP_HOME:-/paperclip}"
 export PAPERCLIP_DEPLOYMENT_MODE="${PAPERCLIP_DEPLOYMENT_MODE:-authenticated}"
+export PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
+export PAPERCLIP_INSTANCE_ID="${PAPERCLIP_INSTANCE_ID:-default}"
+export PAPERCLIP_CONFIG="${PAPERCLIP_CONFIG:-${PAPERCLIP_HOME}/instances/default/config.json}"
+export PAPERCLIP_TELEMETRY_DISABLED="${PAPERCLIP_TELEMETRY_DISABLED:-1}"
+export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
+export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
 export SYNC_INTERVAL="${SYNC_INTERVAL:-180}"
 export SYNC_MAX_FILE_BYTES="${SYNC_MAX_FILE_BYTES:-52428800}"
 export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-paperclip-backup}"
-export PAPERCLIP_TELEMETRY_DISABLED="${PAPERCLIP_TELEMETRY_DISABLED:-1}"
-export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 
-# Derive public URL from HF Space host (auto-set by HF Spaces runtime)
-if [ -z "${PAPERCLIP_PUBLIC_URL}" ] && [ -n "${SPACE_HOST}" ]; then
+# Derive public URL from HF Space host
+if [ -z "${PAPERCLIP_PUBLIC_URL:-}" ] && [ -n "${SPACE_HOST:-}" ]; then
     export PAPERCLIP_PUBLIC_URL="https://${SPACE_HOST}"
 fi
 
-# Allow hostnames via env var (no CLI needed, comma-separated)
-# Includes localhost, 0.0.0.0, and the HF Space public hostname
+# Allowed hostnames
 _ALLOWED="localhost,127.0.0.1,0.0.0.0"
-if [ -n "${SPACE_HOST}" ]; then
+if [ -n "${SPACE_HOST:-}" ]; then
     _ALLOWED="${_ALLOWED},${SPACE_HOST}"
 fi
 export PAPERCLIP_ALLOWED_HOSTNAMES="${PAPERCLIP_ALLOWED_HOSTNAMES:-${_ALLOWED}}"
 
-# Auto-generate BETTER_AUTH_SECRET if not provided
-# User-set secret (HF Space secret) always takes precedence
-AUTH_SECRET_FILE="${PAPERCLIP_HOME}/.auth-secret"
+# LLM API keys
+export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY:-}}"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+
 mkdir -p "${PAPERCLIP_HOME}"
-if [ -z "${BETTER_AUTH_SECRET}" ]; then
+
+# Auth secrets (generate + persist so they survive restarts)
+AUTH_SECRET_FILE="${PAPERCLIP_HOME}/.auth-secret"
+if [ -z "${BETTER_AUTH_SECRET:-}" ]; then
     if [ -f "${AUTH_SECRET_FILE}" ]; then
-        # Reuse previously generated secret (persists across restarts)
         export BETTER_AUTH_SECRET=$(cat "${AUTH_SECRET_FILE}")
-        echo -e "${YELLOW}Using persisted auth secret from ${AUTH_SECRET_FILE}${NC}"
     else
-        # First boot — generate and save
         export BETTER_AUTH_SECRET=$(openssl rand -base64 32)
         echo "${BETTER_AUTH_SECRET}" > "${AUTH_SECRET_FILE}"
         chmod 600 "${AUTH_SECRET_FILE}"
-        echo -e "${YELLOW}Generated new auth secret (saved to ${AUTH_SECRET_FILE})${NC}"
     fi
-else
-    echo -e "${GREEN}Using BETTER_AUTH_SECRET from environment${NC}"
 fi
 
-echo -e "${GREEN}✓ Environment validated${NC}\n"
+JWT_SECRET_FILE="${PAPERCLIP_HOME}/.jwt-secret"
+if [ -z "${PAPERCLIP_AGENT_JWT_SECRET:-}" ]; then
+    if [ -f "${JWT_SECRET_FILE}" ]; then
+        export PAPERCLIP_AGENT_JWT_SECRET=$(cat "${JWT_SECRET_FILE}")
+    else
+        export PAPERCLIP_AGENT_JWT_SECRET=$(openssl rand -base64 32)
+        echo "${PAPERCLIP_AGENT_JWT_SECRET}" > "${JWT_SECRET_FILE}"
+        chmod 600 "${JWT_SECRET_FILE}"
+    fi
+fi
 
-# ============================================================================
-# 2. Initialize PostgreSQL
-# ============================================================================
-echo -e "${BLUE}[2/8] Setting up PostgreSQL database...${NC}"
+# ── Banner ────────────────────────────────────────────────────────────────────
+echo ""
+echo "  ╔════════════════════════════════════╗"
+echo "  ║          HuggingClip               ║"
+echo "  ╚════════════════════════════════════╝"
+echo ""
+echo "Public host  : ${SPACE_HOST:-not detected}"
+echo "Public URL   : ${PAPERCLIP_PUBLIC_URL:-http://localhost:${PORT}}"
+echo "App port     : ${PORT}"
+echo "Deploy mode  : ${PAPERCLIP_DEPLOYMENT_MODE}"
+echo "Sync every   : ${SYNC_INTERVAL}s"
+echo ""
 
-# Detect installed PostgreSQL version
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
 PG_VERSION=$(ls /usr/lib/postgresql/ 2>/dev/null | sort -V | tail -1)
 if [ -z "$PG_VERSION" ]; then
-    echo -e "${RED}ERROR: PostgreSQL not found${NC}"
+    echo "ERROR: PostgreSQL not found"
     exit 1
 fi
 PG_DATA="/var/lib/postgresql/${PG_VERSION}/main"
-echo "PostgreSQL version: ${PG_VERSION}, data dir: ${PG_DATA}"
 
-# Initialize cluster if it doesn't exist yet
 if [ ! -f "${PG_DATA}/PG_VERSION" ]; then
     echo "Initializing PostgreSQL cluster..."
-    pg_createcluster "${PG_VERSION}" main --locale=C.UTF-8
+    pg_createcluster "${PG_VERSION}" main --locale=C.UTF-8 >/dev/null 2>&1
 fi
 
-# Start cluster if not running
 if ! pg_ctlcluster "${PG_VERSION}" main status 2>/dev/null | grep -q "online"; then
-    echo "Starting PostgreSQL cluster..."
-    pg_ctlcluster "${PG_VERSION}" main start
+    echo "Starting PostgreSQL..."
+    pg_ctlcluster "${PG_VERSION}" main start >/dev/null 2>&1
 fi
 
-# Wait until ready
-until pg_isready -h localhost -U postgres 2>/dev/null; do
+until pg_isready -h localhost -U postgres >/dev/null 2>&1; do
     sleep 1
 done
 
-# Set postgres password and create paperclip DB (must run as postgres OS user — peer auth)
-su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'paperclip';\"" 2>/dev/null || true
-su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'paperclip'\" | grep -q 1 || \
-    psql -c \"CREATE DATABASE paperclip OWNER postgres;\"" 2>/dev/null || true
+su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'paperclip';\"" >/dev/null 2>&1 || true
+su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'paperclip'\" | grep -q 1 || psql -c \"CREATE DATABASE paperclip OWNER postgres;\"" >/dev/null 2>&1 || true
 
-# Export correct DATABASE_URL with detected version credentials
-export DATABASE_URL="${DATABASE_URL:-postgres://postgres:paperclip@localhost:5432/paperclip}"
+echo "PostgreSQL ready (v${PG_VERSION})"
 
-echo -e "${GREEN}✓ PostgreSQL ready${NC}\n"
-
-# ============================================================================
-# 3. Restore from HF Dataset Backup
-# ============================================================================
-echo -e "${BLUE}[3/8] Restoring database from HF Dataset backup...${NC}"
-
-if [ "$SYNC_DISABLED" = false ]; then
+# ── Restore from HF Dataset ───────────────────────────────────────────────────
+if [ -n "${HF_TOKEN:-}" ]; then
+    echo "Restoring persisted data from HF Dataset..."
     python3 /app/paperclip-sync.py restore 2>&1 || true
-    echo -e "${GREEN}✓ Restore attempt completed${NC}\n"
 else
-    echo -e "${YELLOW}Skipping restore (no HF_TOKEN)${NC}\n"
+    echo "HF_TOKEN not set — running without backup persistence"
 fi
 
-# ============================================================================
-# 4. Setup Cloudflare Proxy (if token provided)
-# ============================================================================
-if [ -n "$CLOUDFLARE_WORKERS_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
-    echo -e "${BLUE}[4/8] Setting up Cloudflare proxy...${NC}"
-    python3 /app/cloudflare-proxy-setup.py 2>&1 || echo -e "${YELLOW}Cloudflare setup failed, continuing without proxy${NC}"
-    echo ""
-else
-    echo -e "${BLUE}[4/8] Cloudflare proxy (skipped - no credentials)${NC}\n"
+# ── Cloudflare Proxy ──────────────────────────────────────────────────────────
+if [ -n "${CLOUDFLARE_WORKERS_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+    echo "Setting up Cloudflare proxy..."
+    python3 /app/cloudflare-proxy-setup.py 2>&1 || echo "Cloudflare setup failed, continuing without proxy"
 fi
 
-# ============================================================================
-# 5. Start Background Sync Loop
-# ============================================================================
-echo -e "${BLUE}[5/8] Starting database sync loop...${NC}"
+# ── Load Cloudflare module if present ─────────────────────────────────────────
+if [ -f /app/cloudflare-proxy.js ]; then
+    export NODE_OPTIONS="--require /app/cloudflare-proxy.js"
+fi
 
-if [ "$SYNC_DISABLED" = false ]; then
-    # Start sync in background
+# ── Background sync loop ──────────────────────────────────────────────────────
+if [ -n "${HF_TOKEN:-}" ]; then
     (
         while true; do
             sleep "$SYNC_INTERVAL"
@@ -171,67 +131,25 @@ if [ "$SYNC_DISABLED" = false ]; then
         done
     ) &
     SYNC_PID=$!
-    echo -e "${GREEN}✓ Sync loop started (PID: $SYNC_PID)${NC}\n"
 else
-    echo -e "${YELLOW}Sync disabled (no HF_TOKEN)${NC}\n"
+    SYNC_PID=""
 fi
 
-# ============================================================================
-# 6. Start Health Server
-# ============================================================================
-echo -e "${BLUE}[6/8] Starting health server on port 7861...${NC}"
-
-# Load Cloudflare proxy if available
-if [ -f /app/cloudflare-proxy.js ]; then
-    export NODE_OPTIONS="--require /app/cloudflare-proxy.js"
-fi
-
+# ── Health server ─────────────────────────────────────────────────────────────
 node /app/health-server.js &
 HEALTH_PID=$!
-echo -e "${GREEN}✓ Health server started (PID: $HEALTH_PID)${NC}\n"
-
-# Wait for health server to start
 sleep 2
 
-# ============================================================================
-# 7. Launch Paperclip
-# ============================================================================
-echo -e "${BLUE}[7/8] Launching Paperclip application...${NC}"
-
+# ── Paperclip instance config ─────────────────────────────────────────────────
 cd /app/paperclip
 
-# Install Paperclip dependencies if needed
 if [ ! -d "node_modules" ]; then
     echo "Installing Paperclip dependencies..."
     pnpm install 2>&1 | tail -5 || npm install 2>&1 | tail -5
 fi
 
-# Run Paperclip
-export DATABASE_URL
-export PORT
-export SERVE_UI
-export NODE_ENV
-export HOST
-export PAPERCLIP_HOME
-export PAPERCLIP_DEPLOYMENT_MODE
-export PAPERCLIP_TELEMETRY_DISABLED
-export DO_NOT_TRACK
-export PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
-export PAPERCLIP_INSTANCE_ID="${PAPERCLIP_INSTANCE_ID:-default}"
-export PAPERCLIP_CONFIG="${PAPERCLIP_CONFIG:-${PAPERCLIP_HOME}/instances/default/config.json}"
-export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
-export PAPERCLIP_ALLOWED_HOSTNAMES
-export PAPERCLIP_PUBLIC_URL
-# Pass LLM API keys through to Paperclip adapters and sub-processes
-export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY:-}}"
-export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
-
-# Create Paperclip instance config.json if it doesn't exist.
-# Required by bootstrap-ceo CLI to find DB and generate the admin invite URL.
-# Skipped when a config was already restored from HF Dataset backup.
 if [ ! -f "${PAPERCLIP_CONFIG}" ]; then
-    echo "Creating Paperclip instance config (first boot)..."
+    echo "Creating instance config (first boot)..."
     mkdir -p "$(dirname "${PAPERCLIP_CONFIG}")"
     python3 <<'PYEOF'
 import json, os
@@ -279,84 +197,63 @@ with open(config_path, "w") as f:
     json.dump(config, f, indent=2)
 print(f"  Config written to {config_path}")
 PYEOF
-    echo -e "${GREEN}✓ Instance config created${NC}"
-else
-    echo -e "${GREEN}✓ Instance config found at ${PAPERCLIP_CONFIG}${NC}"
 fi
 
-echo -e "${GREEN}✓ All systems ready${NC}"
-echo -e "${GREEN}═══════════════════════════════════════════${NC}"
-echo -e "  Health Dashboard: http://localhost:7861/"
-echo -e "  Paperclip UI:     http://localhost:7861/app/"
-echo -e "  API Endpoint:     http://localhost:7861/api/*"
-echo -e "${GREEN}═══════════════════════════════════════════${NC}\n"
-
-# ============================================================================
-# 8. Graceful Shutdown Handler
-# ============================================================================
+# ── Graceful shutdown ─────────────────────────────────────────────────────────
 cleanup() {
-    echo -e "\n${YELLOW}[SHUTDOWN] Received termination signal...${NC}"
-    echo "Syncing data to HF Dataset..."
-
-    if [ "$SYNC_DISABLED" = false ]; then
+    echo "Shutting down — syncing data..."
+    if [ -n "${HF_TOKEN:-}" ]; then
         python3 /app/paperclip-sync.py sync 2>&1 || true
     fi
-
-    echo "Stopping services..."
-    [ -n "$HEALTH_PID" ] && kill $HEALTH_PID 2>/dev/null || true
-    [ -n "$SYNC_PID" ] && kill $SYNC_PID 2>/dev/null || true
-    [ -n "$PAPERCLIP_PID" ] && kill $PAPERCLIP_PID 2>/dev/null || true
-
-    echo -e "${GREEN}Shutdown complete${NC}"
+    [ -n "${HEALTH_PID:-}" ] && kill "$HEALTH_PID" 2>/dev/null || true
+    [ -n "${SYNC_PID:-}" ]   && kill "$SYNC_PID"  2>/dev/null || true
+    [ -n "${PAPERCLIP_PID:-}" ] && kill "$PAPERCLIP_PID" 2>/dev/null || true
     exit 0
 }
-
 trap cleanup SIGTERM SIGINT
 
-# ============================================================================
-# 8. Start Paperclip, wait for init, then bootstrap admin
-# ============================================================================
-echo -e "${BLUE}[8/8] Starting Paperclip server...${NC}"
-
-# Start Paperclip in background so we can run post-init steps
+# ── Launch Paperclip ──────────────────────────────────────────────────────────
+echo "Starting Paperclip..."
 node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 PAPERCLIP_PID=$!
 
-# Wait for Paperclip API to be ready — use 127.0.0.1 to avoid IPv6 issues (max 90s)
-echo "Waiting for Paperclip to initialize..."
+# Wait for API ready (max 90s)
 PAPERCLIP_READY=false
 for i in $(seq 1 45); do
     if curl -sf http://127.0.0.1:3100/api/health >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ Paperclip ready (${i}s)${NC}"
+        echo "Paperclip ready (${i}s)"
         PAPERCLIP_READY=true
         break
     fi
     sleep 2
 done
 
-# Bootstrap first admin — generates invite URL if no admin exists yet
 if [ "$PAPERCLIP_READY" = true ]; then
-    echo -e "${BLUE}Bootstrapping admin account...${NC}"
     BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
-    # Extract URL from the specific "Invite URL: ..." line, stripping ANSI color codes
     INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep "Invite URL:" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' | grep -o 'https\?://[^ ]*' | head -1)
     if [ -n "$INVITE_URL" ]; then
-        # Save invite URL for health dashboard to display
         echo "$INVITE_URL" > /tmp/invite-url.txt
-        echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║  ADMIN SETUP — open this URL in your browser:            ║${NC}"
-        echo -e "${GREEN}║                                                          ║${NC}"
-        echo -e "  ${INVITE_URL}"
-        echo -e "${GREEN}║                                                          ║${NC}"
-        echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo "  ┌─────────────────────────────────────────────────────┐"
+        echo "  │  ADMIN SETUP — open this URL in your browser:       │"
+        echo "  │                                                     │"
+        echo "  │  ${INVITE_URL}"
+        echo "  │                                                     │"
+        echo "  └─────────────────────────────────────────────────────┘"
+        echo ""
     else
-        # Clear any stale invite URL file
         rm -f /tmp/invite-url.txt
-        echo -e "${GREEN}✓ Admin account already configured${NC}"
+        echo "Admin account already configured"
     fi
 else
-    echo -e "${YELLOW}Warning: Paperclip did not become ready in 90s${NC}"
+    echo "Warning: Paperclip did not become ready in 90s"
 fi
 
-# Keep container alive — wait for Paperclip process to exit
+echo "HuggingClip is ready!"
+echo ""
+echo "  Health dashboard : http://localhost:7861/"
+echo "  Paperclip UI     : http://localhost:7861/app/"
+echo "  API              : http://localhost:7861/api/"
+echo ""
+
 wait $PAPERCLIP_PID

@@ -31,6 +31,8 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 # Environment variables
 HF_TOKEN = os.environ.get('HF_TOKEN')
@@ -389,9 +391,7 @@ def sync_from_hf() -> bool:
 
 def sync_to_backup() -> bool:
     """Full backup operation: dump DB → create tarball → upload to HF"""
-    logger.info('=' * 60)
     logger.info('Starting backup operation')
-    logger.info('=' * 60)
 
     status = read_status()
 
@@ -439,9 +439,7 @@ def sync_to_backup() -> bool:
 
 def sync_from_backup() -> bool:
     """Full restore operation: download from HF → extract → restore DB"""
-    logger.info('=' * 60)
     logger.info('Starting restore operation')
-    logger.info('=' * 60)
 
     status = read_status()
 
