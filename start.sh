@@ -319,6 +319,21 @@ if [ "$PAPERCLIP_READY" = true ]; then
         rm -f /tmp/invite-url.txt
         echo "Admin account already configured"
     fi
+
+    # ── Agent CLI diagnostic (helps debug adapter failures) ──────────────────
+    echo ""
+    echo "=== Agent CLI Diagnostic ==="
+    echo "[wrapper paths]"
+    ls -la /usr/local/bin/gemini /usr/local/bin/gemini-real /usr/local/bin/claude /usr/local/bin/claude-real 2>&1 | head -10
+    echo ""
+    echo "[gemini --version as paperclip user]"
+    HOME=/home/paperclip runuser -u paperclip -- /usr/local/bin/gemini --version 2>&1 | head -20 || echo "FAILED: gemini --version"
+    echo ""
+    echo "[gemini hello probe (raw stderr)]"
+    HOME=/home/paperclip GEMINI_API_KEY="${GEMINI_API_KEY:-unset}" runuser -u paperclip -- \
+        /usr/local/bin/gemini --output-format json "Respond with hello." 2>&1 | head -40 || echo "FAILED: gemini probe"
+    echo "=== End diagnostic ==="
+    echo ""
 else
     echo "Warning: Paperclip did not become ready in 90s"
 fi
