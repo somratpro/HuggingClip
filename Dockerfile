@@ -57,13 +57,14 @@ RUN npm init -y && npm install express@4 cors morgan
 # Install agent CLIs globally
 RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 
-# Wrap agent CLIs so they don't inherit NODE_OPTIONS from Paperclip parent.
-# NODE_OPTIONS=--require cloudflare-proxy.js conflicts with gemini's V8 relaunch
-# and breaks claude-code's HTTP. Agents call public LLM APIs directly (not blocked).
+# Wrap agent CLIs so they:
+# 1. Drop cloudflare-proxy.js NODE_OPTIONS (would conflict with their HTTP)
+# 2. Pre-set --max-old-space-size=4096 so gemini doesn't trigger heap-size
+#    self-relaunch (the spawn fails in HF Spaces containers)
 RUN for cmd in claude gemini codex; do \
         if [ -e /usr/local/bin/$cmd ]; then \
             mv /usr/local/bin/$cmd /usr/local/bin/${cmd}-real && \
-            printf '#!/bin/sh\nexec env -u NODE_OPTIONS /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
+            printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096"\nexec /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
             chmod +x /usr/local/bin/$cmd; \
         fi; \
     done
