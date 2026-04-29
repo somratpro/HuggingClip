@@ -135,6 +135,14 @@ if [ -n "${HF_TOKEN:-}" ]; then
     echo "Restoring persisted data from HF Dataset..."
     python3 /app/paperclip-sync.py restore 2>&1 || true
 
+    # Re-stamp .db-password with current session's password so restore can't
+    # overwrite it with an old base64 value that breaks DATABASE_URL next restart
+    echo "${DB_PASSWORD}" > "${DB_PASSWORD_FILE}"
+    chmod 600 "${DB_PASSWORD_FILE}"
+
+    # Update PostgreSQL password to match (restore may have re-created the DB)
+    su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD '${DB_PASSWORD}';\"" >/dev/null 2>&1 || true
+
     # Check if last sync failed
     if [ -f "${SYNC_STATUS_FILE}" ]; then
         LAST_ERROR=$(python3 -c "import json; f=open('${SYNC_STATUS_FILE}'); d=json.load(f); print(d.get('last_error') or '')" 2>/dev/null || true)
