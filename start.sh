@@ -168,9 +168,12 @@ if [ -f "${_CF_ENV}" ]; then
     . "${_CF_ENV}"
 fi
 
-# ── Load Cloudflare module if present ─────────────────────────────────────────
+# ── Cloudflare proxy flag (applied inline to Paperclip only, not exported globally)
+# Exporting NODE_OPTIONS globally breaks agent CLIs (gemini, claude) that spawn
+# subprocesses and inherit it, causing relaunch failures.
+_CF_NODE_OPTS=""
 if [ -f /app/cloudflare-proxy.js ]; then
-    export NODE_OPTIONS="--require /app/cloudflare-proxy.js"
+    _CF_NODE_OPTS="--require /app/cloudflare-proxy.js"
 fi
 
 # ── Background sync loop ──────────────────────────────────────────────────────
@@ -276,7 +279,7 @@ trap cleanup SIGTERM SIGINT
 
 # ── Launch Paperclip ──────────────────────────────────────────────────────────
 echo "Starting Paperclip..."
-node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
+NODE_OPTIONS="${_CF_NODE_OPTS}" node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 PAPERCLIP_PID=$!
 
 # Wait for API ready (max 90s)

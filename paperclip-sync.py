@@ -12,7 +12,7 @@ import tempfile
 import subprocess
 import logging
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Suppress huggingface_hub deprecation noise about local_dir_use_symlinks
@@ -408,7 +408,7 @@ def sync_to_backup() -> bool:
         success = sync_to_hf(tarball_file)
 
         # Update status
-        status['last_sync_time'] = datetime.utcnow().isoformat() + 'Z'
+        status['last_sync_time'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         status['db_status'] = 'connected' if success else 'error'
         status['last_error'] = None if success else 'Upload failed'
         status['sync_count'] = status.get('sync_count', 0) + 1

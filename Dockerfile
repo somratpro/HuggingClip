@@ -54,8 +54,8 @@ RUN mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
 # Install health-server Node dependencies locally in /app
 RUN npm init -y && npm install express@4 cors morgan
 
-# Install Gemini CLI globally so the gemini-local adapter can find it in PATH
-RUN npm install -g @google/gemini-cli
+# Install agent CLIs globally
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 
 # Install Python dependencies for sync
 RUN pip install --no-cache-dir --break-system-packages huggingface_hub PyYAML
