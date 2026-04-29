@@ -277,9 +277,15 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
-# ── Launch Paperclip ──────────────────────────────────────────────────────────
+# ── Ensure paperclip user owns runtime dirs ──────────────────────────────────
+chown -R paperclip:paperclip /app /paperclip 2>/dev/null || true
+
+# ── Launch Paperclip as non-root ──────────────────────────────────────────────
+# Agent CLIs (claude, gemini, codex) refuse --dangerously-skip-permissions as root.
+# Run Paperclip as 'paperclip' user so all spawned subprocesses are non-root.
 echo "Starting Paperclip..."
-NODE_OPTIONS="${_CF_NODE_OPTS}" node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
+HOME=/home/paperclip NODE_OPTIONS="${_CF_NODE_OPTS}" runuser -u paperclip -- \
+    node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 PAPERCLIP_PID=$!
 
 # Wait for API ready (max 90s)
@@ -294,7 +300,7 @@ for i in $(seq 1 45); do
 done
 
 if [ "$PAPERCLIP_READY" = true ]; then
-    BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
+    BOOTSTRAP_OUTPUT=$(HOME=/home/paperclip runuser -u paperclip -- pnpm paperclipai auth bootstrap-ceo 2>&1 || true)
     INVITE_URL=$(echo "$BOOTSTRAP_OUTPUT" | grep "Invite URL:" 2>/dev/null | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' | grep -o 'https\?://[^ ]*' | head -1 || true)
     if [ -n "$INVITE_URL" ]; then
         echo "$INVITE_URL" > /tmp/invite-url.txt

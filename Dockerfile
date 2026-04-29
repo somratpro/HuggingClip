@@ -77,9 +77,12 @@ COPY setup-uptimerobot.sh /app/
 
 RUN chmod +x /app/start.sh /app/setup-uptimerobot.sh
 
-# Persistent storage
-RUN mkdir -p /paperclip /var/lib/postgresql/data && \
-    chown -R postgres:postgres /var/lib/postgresql/data
+# Create non-root user for running Paperclip + agent CLIs
+# Claude Code refuses --dangerously-skip-permissions when running as root
+RUN useradd -m -u 1000 -s /bin/bash paperclip && \
+    mkdir -p /paperclip /var/lib/postgresql/data && \
+    chown -R postgres:postgres /var/lib/postgresql/data && \
+    chown -R paperclip:paperclip /paperclip /app
 
 EXPOSE 7861
 
