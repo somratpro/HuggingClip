@@ -57,6 +57,17 @@ RUN npm init -y && npm install express@4 cors morgan
 # Install agent CLIs globally
 RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 
+# Wrap agent CLIs so they don't inherit NODE_OPTIONS from Paperclip parent.
+# NODE_OPTIONS=--require cloudflare-proxy.js conflicts with gemini's V8 relaunch
+# and breaks claude-code's HTTP. Agents call public LLM APIs directly (not blocked).
+RUN for cmd in claude gemini codex; do \
+        if [ -e /usr/local/bin/$cmd ]; then \
+            mv /usr/local/bin/$cmd /usr/local/bin/${cmd}-real && \
+            printf '#!/bin/sh\nexec env -u NODE_OPTIONS /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
+            chmod +x /usr/local/bin/$cmd; \
+        fi; \
+    done
+
 # Install Python dependencies for sync
 RUN pip install --no-cache-dir --break-system-packages huggingface_hub PyYAML
 
