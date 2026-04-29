@@ -862,6 +862,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── /invite/* → redirect to /app/invite/* (SPA uses basename="/app") ────────
+  if (pathname.startsWith("/invite/") || pathname === "/invite") {
+    const rest = pathname.slice("/invite".length) || "/";
+    const query = parsedUrl.search || "";
+    res.writeHead(302, { Location: "/app/invite" + rest + query });
+    res.end();
+    return;
+  }
+
   // ── /app/* → strip prefix, proxy to Paperclip ─────────────────────────────
   // SPA built with basename="/app"; React Router strips /app client-side.
   if (pathname === "/app" || pathname.startsWith("/app/")) {
