@@ -169,12 +169,15 @@ if [ -f "${_CF_ENV}" ]; then
 fi
 
 # ── Cloudflare proxy flag (applied inline to Paperclip only, not exported globally)
-# Exporting NODE_OPTIONS globally breaks agent CLIs (gemini, claude) that spawn
-# subprocesses and inherit it, causing relaunch failures.
+# Only enable if proxy is actually configured. Otherwise agent CLIs (claude, gemini,
+# codex) inherit it via subprocess env and break their HTTP requests.
 _CF_NODE_OPTS=""
-if [ -f /app/cloudflare-proxy.js ]; then
+if [ -n "${CLOUDFLARE_PROXY_URL:-}" ] && [ -f /app/cloudflare-proxy.js ]; then
     _CF_NODE_OPTS="--require /app/cloudflare-proxy.js"
 fi
+
+# ── Disable Gemini CLI sandbox (would try to start Docker inside Docker) ─────
+export GEMINI_SANDBOX=false
 
 # ── Background sync loop ──────────────────────────────────────────────────────
 if [ -n "${HF_TOKEN:-}" ]; then
