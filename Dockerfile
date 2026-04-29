@@ -64,7 +64,7 @@ RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 RUN for cmd in claude gemini codex; do \
         if [ -e /usr/local/bin/$cmd ]; then \
             mv /usr/local/bin/$cmd /usr/local/bin/${cmd}-real && \
-            printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096"\nexec /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
+            printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexec /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
             chmod +x /usr/local/bin/$cmd; \
         fi; \
     done
