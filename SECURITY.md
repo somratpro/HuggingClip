@@ -10,9 +10,8 @@
 
 **Do NOT open a public issue for security vulnerabilities.**
 
-Email: security@somratpro.com (or create a private GitHub security advisory)
-
 Include:
+
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
@@ -26,7 +25,7 @@ We will respond within 48 hours and aim to patch critical issues within 7 days.
 
 - **Never commit secrets to git** — use HF Space secrets or environment variables
 - `HF_TOKEN`: Store as HF Space secret, not in code
-- `CLAUDE_API_KEY`, `LLM_API_KEY`: Same — HF Space secrets only
+- `ANTHROPIC_API_KEY`, `LLM_API_KEY`: Same — HF Space secrets only
 - `BETTER_AUTH_SECRET`: Generate strong random secret (`openssl rand -base64 32`)
 - Rotate tokens if accidentally exposed
 
