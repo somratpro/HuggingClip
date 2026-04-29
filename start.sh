@@ -109,7 +109,7 @@ done
 # Generate random DB password on first run (don't hardcode 'paperclip')
 DB_PASSWORD_FILE="${PAPERCLIP_HOME}/.db-password"
 if [ ! -f "${DB_PASSWORD_FILE}" ]; then
-    DB_PASSWORD=$(openssl rand -base64 24)
+    DB_PASSWORD=$(openssl rand -hex 24)
     echo "$DB_PASSWORD" > "${DB_PASSWORD_FILE}"
     chmod 600 "${DB_PASSWORD_FILE}"
 else
@@ -121,8 +121,10 @@ su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD '${DB_PASSWORD}';\
 su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'paperclip'\" | grep -q 1 || psql -c \"CREATE DATABASE paperclip OWNER postgres;\"" >/dev/null 2>&1 || true
 
 # Update DATABASE_URL with generated password (if not explicitly set)
+# URL-encode the password to handle special chars (e.g. / + = from old base64 passwords)
 if [[ "$DATABASE_URL" == *"postgres:paperclip"* ]]; then
-    export DATABASE_URL="postgres://postgres:${DB_PASSWORD}@localhost:5432/paperclip"
+    DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${DB_PASSWORD}")
+    export DATABASE_URL="postgres://postgres:${DB_PASSWORD_ENCODED}@localhost:5432/paperclip"
 fi
 
 echo "PostgreSQL ready (v${PG_VERSION})"
@@ -135,7 +137,7 @@ if [ -n "${HF_TOKEN:-}" ]; then
 
     # Check if last sync failed
     if [ -f "${SYNC_STATUS_FILE}" ]; then
-        LAST_ERROR=$(python3 -c "import json; f=open('${SYNC_STATUS_FILE}'); d=json.load(f); print(d.get('last_error', ''))" 2>/dev/null || true)
+        LAST_ERROR=$(python3 -c "import json; f=open('${SYNC_STATUS_FILE}'); d=json.load(f); print(d.get('last_error') or '')" 2>/dev/null || true)
         if [ -n "$LAST_ERROR" ]; then
             echo "⚠️  WARNING: Last backup sync failed: $LAST_ERROR"
             echo "   Data may not be persisted to HF Dataset"
