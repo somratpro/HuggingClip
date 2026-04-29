@@ -79,10 +79,12 @@ RUN chmod +x /app/start.sh /app/setup-uptimerobot.sh
 
 # Create non-root user for running Paperclip + agent CLIs
 # Claude Code refuses --dangerously-skip-permissions when running as root
+# Note: /app files stay root-owned (644/755 defaults = readable by all).
+# /paperclip runtime dir is chowned to paperclip in start.sh after restore.
 RUN useradd -m -u 1000 -s /bin/bash paperclip && \
     mkdir -p /paperclip /var/lib/postgresql/data && \
     chown -R postgres:postgres /var/lib/postgresql/data && \
-    chown -R paperclip:paperclip /paperclip /app
+    chown paperclip:paperclip /paperclip
 
 EXPOSE 7861
 
