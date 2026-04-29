@@ -19,7 +19,7 @@ export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
 export SYNC_INTERVAL="${SYNC_INTERVAL:-180}"
 export SYNC_MAX_FILE_BYTES="${SYNC_MAX_FILE_BYTES:-52428800}"
-export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-paperclip-backup}"
+export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-huggingclip-backup}"
 
 # Derive public URL from HF Space host
 if [ -z "${PAPERCLIP_PUBLIC_URL:-}" ] && [ -n "${SPACE_HOST:-}" ]; then

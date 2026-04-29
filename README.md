@@ -99,7 +99,7 @@ No secrets are strictly required to start, but you need at least one LLM key to 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `HF_TOKEN` | — | HF token with write access — enables DB backup persistence |
-| `BACKUP_DATASET_NAME` | `paperclip-backup` | Dataset name for backup repo |
+| `BACKUP_DATASET_NAME` | `huggingclip-backup` | Dataset name for backup repo |
 | `SYNC_INTERVAL` | `180` | Backup interval in seconds |
 
 ### Advanced
@@ -153,9 +153,9 @@ HuggingClip automatically backs up your Paperclip PostgreSQL database to a priva
 
 - Full PostgreSQL SQL dump
 - Paperclip config, secrets, and data files
-- Packaged as `snapshots/latest.tar.gz` in your `paperclip-backup` dataset
+- Packaged as `snapshots/latest.tar.gz` in your `huggingclip-backup` dataset
 
-**Setup:** Add `HF_TOKEN` (write-access token) to Space secrets. The dataset `<your-username>/paperclip-backup` is created automatically on first sync.
+**Setup:** Add `HF_TOKEN` (write-access token) to Space secrets. The dataset `<your-username>/huggingclip-backup` is created automatically on first sync.
 
 > [!NOTE]
 > Without `HF_TOKEN`, the app runs fine but all data is lost on Space restart. Set it up from the start to avoid losing agent configurations.

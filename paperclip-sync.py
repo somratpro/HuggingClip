@@ -38,7 +38,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 HF_TOKEN = os.environ.get('HF_TOKEN')
 HF_USERNAME = os.environ.get('HF_USERNAME')
 DATABASE_URL = os.environ.get('DATABASE_URL', 'postgres://postgres:paperclip@localhost:5432/paperclip')
-BACKUP_DATASET_NAME = os.environ.get('BACKUP_DATASET_NAME', 'paperclip-backup')
+BACKUP_DATASET_NAME = os.environ.get('BACKUP_DATASET_NAME', 'huggingclip-backup')
 SYNC_MAX_FILE_BYTES = int(os.environ.get('SYNC_MAX_FILE_BYTES', '52428800'))  # 50MB
 PAPERCLIP_HOME = os.environ.get('PAPERCLIP_HOME', '/paperclip')
 # Status file for dashboard
