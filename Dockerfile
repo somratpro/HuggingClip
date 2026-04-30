@@ -69,37 +69,23 @@ RUN for cmd in claude codex; do \
         fi; \
     done
 
-# Gemini wrapper — definitive fix for "Failed to relaunch the CLI process":
+# Gemini wrapper — fix for "Failed to relaunch the CLI process":
 #
-# ROOT CAUSE: Gemini CLI checks process.execArgv for --max-old-space-size.
-#   NODE_OPTIONS does NOT populate process.execArgv, so Gemini always tries to
-#   relaunch itself with the flag as a CLI arg. That spawn fails in HF Spaces.
+# ROOT CAUSE: relaunch.ts::relaunchAppInChildProcess() spawns a child process
+#   with stdio IPC. That spawn fails when Paperclip pipes gemini's stdio.
+#   Source: packages/cli/src/utils/relaunch.ts
 #
-# FIX: Resolve the actual JS entry point at build time and invoke it directly
-#   via `node --max-old-space-size=4096 <entry.js>` so the flag IS in execArgv.
-#   Gemini sees it, skips the relaunch entirely.
+# FIX: GEMINI_CLI_NO_RELAUNCH=1 — documented kill-switch in relaunch.ts that
+#   makes relaunchAppInChildProcess() return early (skip spawn entirely).
+#   The process then runs as the main process without a child.
 #
-# Also bake in headless env vars so they survive even when Paperclip spawns
-# gemini with a custom env object (no env inheritance fallback):
-#   GEMINI_SANDBOX=false          — skip Docker-sandbox attempt in containers
+# Also bake in other headless vars so they survive even if Paperclip spawns
+# gemini with a custom env object:
+#   GEMINI_SANDBOX=false          — skip Docker-sandbox attempt
 #   GEMINI_CLI_TRUST_WORKSPACE=true — skip interactive workspace-trust prompt
-RUN GEMINI_PKG="/usr/local/lib/node_modules/@google/gemini-cli" && \
-    GEMINI_JS=$(node -e " \
-      const pkg = require('$GEMINI_PKG/package.json'); \
-      const bin = pkg.bin; \
-      const entry = typeof bin === 'string' ? bin : (bin.gemini || bin[Object.keys(bin)[0]]); \
-      console.log(require('path').resolve('$GEMINI_PKG', entry)); \
-    ") && \
-    echo "Gemini JS entry: $GEMINI_JS" && \
-    mv /usr/local/bin/gemini /usr/local/bin/gemini-real && \
-    { \
-      echo '#!/bin/sh'; \
-      echo 'unset NODE_OPTIONS'; \
-      echo 'export NODE_OPTIONS="--no-deprecation --no-warnings"'; \
-      echo 'export GEMINI_SANDBOX=false'; \
-      echo 'export GEMINI_CLI_TRUST_WORKSPACE=true'; \
-      echo "exec node --max-old-space-size=4096 $GEMINI_JS \"\$@\""; \
-    } > /usr/local/bin/gemini && \
+RUN mv /usr/local/bin/gemini /usr/local/bin/gemini-real && \
+    printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexport GEMINI_CLI_NO_RELAUNCH=1\nexport GEMINI_SANDBOX=false\nexport GEMINI_CLI_TRUST_WORKSPACE=true\nexec /usr/local/bin/gemini-real "$@"\n' \
+      > /usr/local/bin/gemini && \
     chmod +x /usr/local/bin/gemini && \
     echo "=== gemini wrapper ===" && cat /usr/local/bin/gemini
 

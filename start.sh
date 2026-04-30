@@ -180,9 +180,12 @@ fi
 # Disable sandbox (would try to start Docker inside Docker)
 export GEMINI_SANDBOX=false
 # Trust the workspace — paperclip user runs from /app/paperclip (root-owned).
-# Without this, gemini's relaunch child fails the trust check and parent reports
-# "Failed to relaunch the CLI process."
 export GEMINI_CLI_TRUST_WORKSPACE=true
+# Kill-switch for relaunch.ts::relaunchAppInChildProcess() — the spawn inside
+# fails when Paperclip pipes gemini's stdio (IPC channel setup fails).
+# With this set, relaunchAppInChildProcess() returns early and gemini runs
+# as the main process without spawning a child.
+export GEMINI_CLI_NO_RELAUNCH=1
 
 # ── Background sync loop ──────────────────────────────────────────────────────
 if [ -n "${HF_TOKEN:-}" ]; then
