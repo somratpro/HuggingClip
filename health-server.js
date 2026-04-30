@@ -36,7 +36,8 @@ function isLocalRoute(pathname) {
   return (
     pathname === "/health" ||
     pathname === "/status" ||
-    pathname === "/uptimerobot/setup"
+    pathname === "/uptimerobot/setup" ||
+    pathname === "/debug/gemini-log"
   );
 }
 
@@ -505,6 +506,9 @@ function renderDashboard(initialData) {
                     <span class="stat-label">Paperclip</span>
                     <span id="paperclip-badge">${paperclipBadge}</span>
                 </div>
+                <div style="margin-top: 8px; font-size: 0.82rem; color: var(--text-dim);">
+                    Port <strong style="color:var(--text)">3100</strong> · <a href="/app/" style="color:#818cf8;text-decoration:none;" target="_blank">Open UI →</a>
+                </div>
             </div>
             <div class="stat-card">
                 <span class="stat-label">Uptime</span>
@@ -797,6 +801,19 @@ const server = http.createServer((req, res) => {
         inviteUrl: readInviteUrl(),
       }));
     })();
+    return;
+  }
+
+  // ── Gemini wrapper debug log ──────────────────────────────────────────────
+  if (pathname === "/debug/gemini-log") {
+    try {
+      const log = fs.readFileSync("/tmp/gemini-wrapper.log", "utf8");
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(log);
+    } catch {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("No log yet — click 'Test now' on the Gemini adapter first.\n");
+    }
     return;
   }
 

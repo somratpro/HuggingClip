@@ -20,17 +20,23 @@ warnings.filterwarnings('ignore', category=UserWarning, module='huggingface_hub'
 
 from huggingface_hub import HfApi
 from huggingface_hub.utils import RepositoryNotFoundError, EntryNotFoundError
+import huggingface_hub
+
+# Disable all HF Hub progress bars (they clutter container logs)
+huggingface_hub.utils.disable_progress_bars()
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-# Logging setup
+# Logging: WARNING level keeps errors visible, suppresses routine INFO chatter
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+# Set our own logger to INFO so backup/restore start+finish lines still print
+logger.setLevel(logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
@@ -119,7 +125,7 @@ def backup_database() -> tuple[str, bool]:
     Backup PostgreSQL database to SQL dump.
     Returns (filepath, success)
     """
-    logger.info('Starting database backup...')
+    logger.debug('Starting database backup...')
 
     db_config = parse_db_url(DATABASE_URL)
     if not db_config:
@@ -154,7 +160,7 @@ def backup_database() -> tuple[str, bool]:
             return None, False
 
         dump_size = dump_file.stat().st_size
-        logger.info(f'Database dumped successfully ({dump_size / 1024 / 1024:.2f} MB)')
+        logger.debug(f'Database dumped ({dump_size / 1024 / 1024:.2f} MB)')
 
         return str(dump_file), True
 
@@ -170,7 +176,7 @@ def create_backup_tarball(dump_file: str) -> tuple[str, bool]:
     Create tarball with database dump and Paperclip data files.
     Returns (tarball_path, success)
     """
-    logger.info('Creating backup tarball...')
+    logger.debug('Creating backup tarball...')
 
     temp_dir = tempfile.mkdtemp()
     tarball_file = Path(temp_dir) / 'paperclip-backup.tar.gz'
@@ -187,7 +193,7 @@ def create_backup_tarball(dump_file: str) -> tuple[str, bool]:
                 logger.warning(f'PAPERCLIP_HOME not found: {PAPERCLIP_HOME}')
 
         tarball_size = tarball_file.stat().st_size
-        logger.info(f'Backup tarball created ({tarball_size / 1024 / 1024:.2f} MB)')
+        logger.debug(f'Tarball created ({tarball_size / 1024 / 1024:.2f} MB)')
 
         # Check size limit
         if tarball_size > SYNC_MAX_FILE_BYTES:
@@ -206,7 +212,7 @@ def sync_to_hf(backup_file: str) -> bool:
         logger.warning('HF_TOKEN not set - skipping backup upload')
         return False
 
-    logger.info('Uploading backup to Hugging Face...')
+    logger.debug('Uploading backup to Hugging Face...')
 
     try:
         api = HfApi(token=HF_TOKEN)
@@ -223,7 +229,6 @@ def sync_to_hf(backup_file: str) -> bool:
         dataset_id = f'{username}/{BACKUP_DATASET_NAME}'
 
         api.create_repo(repo_id=dataset_id, repo_type='dataset', private=True, exist_ok=True)
-        logger.info(f'Using dataset: {dataset_id}')
 
         api.upload_file(
             path_or_fileobj=backup_file,
@@ -232,7 +237,7 @@ def sync_to_hf(backup_file: str) -> bool:
             repo_type='dataset'
         )
 
-        logger.info(f'Backup uploaded to {dataset_id}')
+        logger.debug(f'Backup uploaded to {dataset_id}')
         return True
 
     except Exception as e:
@@ -243,7 +248,7 @@ def restore_database(restore_file: str) -> bool:
     """
     Restore PostgreSQL database from SQL dump.
     """
-    logger.info('Restoring database from backup...')
+    logger.debug('Restoring database from backup...')
 
     db_config = parse_db_url(DATABASE_URL)
     if not db_config:
@@ -292,7 +297,7 @@ def restore_database(restore_file: str) -> bool:
             logger.error(f'Restore failed: {error_msg}')
             return False
 
-        logger.info('Database restored successfully')
+        logger.debug('Database restored')
         return True
 
     except subprocess.TimeoutExpired:
@@ -310,7 +315,7 @@ def sync_from_hf() -> bool:
         logger.warning('HF_TOKEN not set - skipping restore')
         return False
 
-    logger.info('Downloading backup from Hugging Face...')
+    logger.debug('Downloading backup from Hugging Face...')
 
     try:
         api = HfApi(token=HF_TOKEN)
@@ -338,13 +343,13 @@ def sync_from_hf() -> bool:
                 local_dir_use_symlinks=False
             )
         except (RepositoryNotFoundError, EntryNotFoundError):
-            logger.info(f'No backup found in {dataset_id} (first boot)')
+            logger.info(f'No backup found in {dataset_id} — fresh instance')
             return None  # not an error — just no backup yet
 
-        logger.info(f'Downloaded backup from {dataset_id}')
+        logger.debug(f'Downloaded backup from {dataset_id}')
 
         # Extract tarball
-        logger.info('Extracting backup...')
+        logger.debug('Extracting backup...')
         with tarfile.open(snapshot_path, 'r:gz') as tar:
             tar.extractall(temp_dir, filter='data')
 
@@ -359,7 +364,7 @@ def sync_from_hf() -> bool:
         # Restore Paperclip data files if present
         paperclip_data_dir = Path(temp_dir) / 'paperclip-data'
         if paperclip_data_dir.exists():
-            logger.info('Restoring Paperclip data files...')
+            logger.debug('Restoring Paperclip data files...')
             import shutil
             try:
                 for item in paperclip_data_dir.iterdir():
@@ -367,7 +372,7 @@ def sync_from_hf() -> bool:
                     if target.exists():
                         shutil.rmtree(target) if target.is_dir() else target.unlink()
                     shutil.copytree(item, target) if item.is_dir() else shutil.copy2(item, target)
-                logger.info('Data files restored')
+                logger.debug('Data files restored')
             except Exception as e:
                 logger.error(f'Failed to restore data files: {e}')
 
@@ -383,7 +388,7 @@ def sync_from_hf() -> bool:
 
 def sync_to_backup() -> bool:
     """Full backup operation: dump DB → create tarball → upload to HF"""
-    logger.info('Starting backup operation')
+    logger.info('Syncing backup to HF Dataset...')
 
     status = read_status()
 
@@ -416,9 +421,9 @@ def sync_to_backup() -> bool:
         write_status(status)
 
         if success:
-            logger.info('Backup operation completed successfully')
+            logger.info('Backup synced OK')
         else:
-            logger.warning('Backup operation completed with errors')
+            logger.warning('Backup sync failed')
 
         return success
 
@@ -431,7 +436,7 @@ def sync_to_backup() -> bool:
 
 def sync_from_backup() -> bool:
     """Full restore operation: download from HF → extract → restore DB"""
-    logger.info('Starting restore operation')
+    logger.info('Restoring from HF Dataset...')
 
     status = read_status()
 
@@ -443,13 +448,13 @@ def sync_from_backup() -> bool:
             status['db_status'] = 'connected'
             status['last_error'] = None
             write_status(status)
-            logger.info('No prior backup found — fresh instance, DB ready')
+            logger.info('No prior backup — fresh instance')
             return True
         elif success:
             status['db_status'] = 'connected'
             status['last_error'] = None
             write_status(status)
-            logger.info('Restore operation completed successfully')
+            logger.info('Restore OK')
             return True
         else:
             status['db_status'] = 'error'

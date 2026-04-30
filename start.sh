@@ -17,7 +17,7 @@ export PAPERCLIP_CONFIG="${PAPERCLIP_CONFIG:-${PAPERCLIP_HOME}/instances/default
 export PAPERCLIP_TELEMETRY_DISABLED="${PAPERCLIP_TELEMETRY_DISABLED:-1}"
 export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
-export SYNC_INTERVAL="${SYNC_INTERVAL:-180}"
+export SYNC_INTERVAL="${SYNC_INTERVAL:-86400}"
 export SYNC_MAX_FILE_BYTES="${SYNC_MAX_FILE_BYTES:-52428800}"
 export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-huggingclip-backup}"
 
@@ -328,22 +328,6 @@ if [ "$PAPERCLIP_READY" = true ]; then
         echo "Admin account already configured"
     fi
 
-    # ── Gemini diagnostic: test direct invocation + show wrapper env log ──────
-    echo ""
-    echo "=== Gemini diagnostic ==="
-    HOME=/home/paperclip runuser -u paperclip -- \
-        /usr/local/bin/gemini --output-format json "Respond with hello." \
-        >/tmp/gemini-diag.out 2>/tmp/gemini-diag.err || true
-    echo "startup-probe exit=$?"
-    echo "--- stdout (first 5 lines) ---"
-    head -5 /tmp/gemini-diag.out 2>/dev/null || true
-    echo "--- stderr ---"
-    cat /tmp/gemini-diag.err 2>/dev/null | head -10 || true
-    echo ""
-    echo "NOTE: After clicking 'Test now' in UI, run:"
-    echo "  cat /tmp/gemini-wrapper.log  (shows env Paperclip passes)"
-    echo "=== end diagnostic ==="
-    echo ""
 
 else
     echo "Warning: Paperclip did not become ready in 90s"
