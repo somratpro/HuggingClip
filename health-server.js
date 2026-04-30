@@ -10,7 +10,7 @@ const PAPERCLIP_PORT = 3100;
 const startTime = Date.now();
 
 const HF_BACKUP_ENABLED = !!process.env.HF_TOKEN;
-const SYNC_INTERVAL = process.env.SYNC_INTERVAL || "180";
+const SYNC_INTERVAL = process.env.SYNC_INTERVAL || "86400";
 
 const UPTIMEROBOT_SETUP_ENABLED =
   String(process.env.UPTIMEROBOT_SETUP_ENABLED || "true").toLowerCase() === "true";
@@ -36,8 +36,7 @@ function isLocalRoute(pathname) {
   return (
     pathname === "/health" ||
     pathname === "/status" ||
-    pathname === "/uptimerobot/setup" ||
-    pathname === "/debug/gemini-log"
+    pathname === "/uptimerobot/setup"
   );
 }
 
@@ -801,19 +800,6 @@ const server = http.createServer((req, res) => {
         inviteUrl: readInviteUrl(),
       }));
     })();
-    return;
-  }
-
-  // ── Gemini wrapper debug log ──────────────────────────────────────────────
-  if (pathname === "/debug/gemini-log") {
-    try {
-      const log = fs.readFileSync("/tmp/gemini-wrapper.log", "utf8");
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end(log);
-    } catch {
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("No log yet — click 'Test now' on the Gemini adapter first.\n");
-    }
     return;
   }
 

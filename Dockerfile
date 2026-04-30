@@ -57,17 +57,30 @@ RUN npm init -y && npm install express@4 cors morgan
 # Install agent CLIs globally
 RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 
-# Wrap agent CLIs so they:
-# 1. Drop cloudflare-proxy.js NODE_OPTIONS (would conflict with their HTTP)
-# 2. Pre-set --max-old-space-size=4096 so gemini doesn't trigger heap-size
-#    self-relaunch (the spawn fails in HF Spaces containers)
-RUN for cmd in claude codex; do \
-        if [ -e /usr/local/bin/$cmd ]; then \
-            mv /usr/local/bin/$cmd /usr/local/bin/${cmd}-real && \
-            printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexec /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
-            chmod +x /usr/local/bin/$cmd; \
-        fi; \
-    done
+# Claude Code wrapper — auth mode selection:
+#   ANTHROPIC_AUTH_TOKEN set → subscription mode (OAuth token, takes priority)
+#   ANTHROPIC_API_KEY set    → API key mode
+#   Neither set              → uses stored OAuth credentials in ~/.claude/
+# If both are set, subscription token wins: unset API key to avoid conflict.
+# Also drops cloudflare NODE_OPTIONS and caps heap size.
+RUN if [ -e /usr/local/bin/claude ]; then \
+    mv /usr/local/bin/claude /usr/local/bin/claude-real && \
+    { \
+      echo '#!/bin/sh'; \
+      echo 'unset NODE_OPTIONS'; \
+      echo '[ -n "$ANTHROPIC_AUTH_TOKEN" ] && unset ANTHROPIC_API_KEY'; \
+      echo 'export NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"'; \
+      echo 'exec /usr/local/bin/claude-real "$@"'; \
+    } > /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude; \
+fi
+
+# Codex wrapper — drops cloudflare NODE_OPTIONS, caps heap size
+RUN if [ -e /usr/local/bin/codex ]; then \
+    mv /usr/local/bin/codex /usr/local/bin/codex-real && \
+    printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexec /usr/local/bin/codex-real "$@"\n' > /usr/local/bin/codex && \
+    chmod +x /usr/local/bin/codex; \
+fi
 
 # Gemini wrapper — fix for "Failed to relaunch the CLI process":
 #
@@ -86,10 +99,6 @@ RUN for cmd in claude codex; do \
 RUN mv /usr/local/bin/gemini /usr/local/bin/gemini-real && \
     { \
       echo '#!/bin/sh'; \
-      echo '# Log invocation so we can see what env Paperclip actually passes'; \
-      echo 'echo "=== gemini wrapper $(date) args: $@ ===" >> /tmp/gemini-wrapper.log'; \
-      echo 'env | sort >> /tmp/gemini-wrapper.log'; \
-      echo ''; \
       echo 'unset NODE_OPTIONS'; \
       echo 'export NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"'; \
       echo 'export GEMINI_CLI_NO_RELAUNCH=1'; \
@@ -100,8 +109,7 @@ RUN mv /usr/local/bin/gemini /usr/local/bin/gemini-real && \
       echo 'export SANDBOX=1'; \
       echo 'exec /usr/local/bin/gemini-real "$@"'; \
     } > /usr/local/bin/gemini && \
-    chmod +x /usr/local/bin/gemini && \
-    echo "=== gemini wrapper ===" && cat /usr/local/bin/gemini
+    chmod +x /usr/local/bin/gemini
 
 # Install Python dependencies for sync
 RUN pip install --no-cache-dir --break-system-packages huggingface_hub PyYAML

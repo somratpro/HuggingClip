@@ -35,8 +35,12 @@ export PAPERCLIP_ALLOWED_HOSTNAMES="${PAPERCLIP_ALLOWED_HOSTNAMES:-${_ALLOWED}}"
 
 # LLM API keys
 export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+# Anthropic/Claude Code — set one or neither:
+#   ANTHROPIC_AUTH_TOKEN : subscription mode (OAuth token from ~/.claude/.credentials.json)
+#   ANTHROPIC_API_KEY    : API key mode (sk-ant-...)
+export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 
 mkdir -p "${PAPERCLIP_HOME}"
 
@@ -64,9 +68,9 @@ if [ -z "${PAPERCLIP_AGENT_JWT_SECRET:-}" ]; then
 fi
 
 # ── Validate LLM providers ───────────────────────────────────────────────────
-if [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
+if [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
     echo "⚠️  WARNING: No LLM provider configured"
-    echo "   Set at least one of: GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY"
+    echo "   Set at least one of: GEMINI_API_KEY, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY"
     echo "   Agents will fail to run without an LLM provider"
     echo ""
 fi
@@ -287,6 +291,18 @@ cleanup() {
     exit 0
 }
 trap cleanup SIGTERM SIGINT
+
+# ── Codex API key config ─────────────────────────────────────────────────────
+# Codex default auth mode is "chatgpt" (OAuth). Setting forced_login_method="api"
+# makes it read OPENAI_API_KEY from env instead of prompting for browser login.
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+    mkdir -p /home/paperclip/.codex
+    cat > /home/paperclip/.codex/config.toml <<'TOMLEOF'
+forced_login_method = "api"
+TOMLEOF
+    chmod 600 /home/paperclip/.codex/config.toml
+    chown -R paperclip:paperclip /home/paperclip/.codex
+fi
 
 # ── Ensure paperclip user owns runtime dirs ──────────────────────────────────
 chown -R paperclip:paperclip /app /paperclip 2>/dev/null || true
