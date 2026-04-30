@@ -328,6 +328,22 @@ if [ "$PAPERCLIP_READY" = true ]; then
         echo "Admin account already configured"
     fi
 
+    # ── Gemini stderr diagnostic (captures actual error after "Fatal error:") ──
+    echo ""
+    echo "=== Gemini full-stderr diagnostic ==="
+    HOME=/home/paperclip runuser -u paperclip -- \
+        /usr/local/bin/gemini --output-format json "Respond with hello." \
+        >/tmp/gemini-diag.out 2>/tmp/gemini-diag.err || true
+    echo "exit=$?"
+    echo "--- wrapper content ---"
+    cat /usr/local/bin/gemini
+    echo "--- stdout ---"
+    cat /tmp/gemini-diag.out 2>/dev/null | head -20 || true
+    echo "--- full stderr ---"
+    cat /tmp/gemini-diag.err 2>/dev/null || true
+    echo "=== end gemini diagnostic ==="
+    echo ""
+
 else
     echo "Warning: Paperclip did not become ready in 90s"
 fi
