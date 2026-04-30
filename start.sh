@@ -305,6 +305,7 @@ forced_login_method = "api"
 model_provider = "openai-hf"
 
 [model_providers.openai-hf]
+name = "OpenAI"
 base_url = "https://api.openai.com/v1"
 experimental_bearer_token = "${OPENAI_API_KEY}"
 requires_openai_auth = false
