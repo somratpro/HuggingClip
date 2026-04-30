@@ -292,13 +292,37 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
+# ── Claude Code credentials ──────────────────────────────────────────────────
+# ANTHROPIC_AUTH_TOKEN may not reach the claude subprocess if Paperclip spawns
+# with a restricted env. Writing ~/.claude/.credentials.json bypasses that —
+# Claude Code reads OAuth tokens directly from the filesystem.
+if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+    mkdir -p /home/paperclip/.claude
+    python3 -c "
+import json, os
+creds = {
+    'claudeAiOauth': {
+        'accessToken': os.environ['ANTHROPIC_AUTH_TOKEN'],
+        'refreshToken': '',
+        'expiresAt': 9999999999999,
+        'scopes': ['user:inference']
+    }
+}
+with open('/home/paperclip/.claude/.credentials.json', 'w') as f:
+    json.dump(creds, f)
+"
+    chmod 600 /home/paperclip/.claude/.credentials.json
+    chown -R paperclip:paperclip /home/paperclip/.claude
+fi
+
 # ── Codex API key config ─────────────────────────────────────────────────────
-# Codex default auth mode is "chatgpt" (OAuth). Setting forced_login_method="api"
-# makes it read OPENAI_API_KEY from env instead of prompting for browser login.
 if [ -n "${OPENAI_API_KEY:-}" ]; then
     mkdir -p /home/paperclip/.codex
-    cat > /home/paperclip/.codex/config.toml <<'TOMLEOF'
+    cat > /home/paperclip/.codex/config.toml <<TOMLEOF
 forced_login_method = "api"
+
+[model_providers.openai]
+experimental_bearer_token = "${OPENAI_API_KEY}"
 TOMLEOF
     chmod 600 /home/paperclip/.codex/config.toml
     chown -R paperclip:paperclip /home/paperclip/.codex
