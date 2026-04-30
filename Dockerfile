@@ -84,8 +84,22 @@ RUN for cmd in claude codex; do \
 #   GEMINI_SANDBOX=false          — skip Docker-sandbox attempt
 #   GEMINI_CLI_TRUST_WORKSPACE=true — skip interactive workspace-trust prompt
 RUN mv /usr/local/bin/gemini /usr/local/bin/gemini-real && \
-    printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexport GEMINI_CLI_NO_RELAUNCH=1\nexport GEMINI_SANDBOX=false\nexport GEMINI_CLI_TRUST_WORKSPACE=true\nexec /usr/local/bin/gemini-real "$@"\n' \
-      > /usr/local/bin/gemini && \
+    { \
+      echo '#!/bin/sh'; \
+      echo '# Log invocation so we can see what env Paperclip actually passes'; \
+      echo 'echo "=== gemini wrapper $(date) args: $@ ===" >> /tmp/gemini-wrapper.log'; \
+      echo 'env | sort >> /tmp/gemini-wrapper.log'; \
+      echo ''; \
+      echo 'unset NODE_OPTIONS'; \
+      echo 'export NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"'; \
+      echo 'export GEMINI_CLI_NO_RELAUNCH=1'; \
+      echo 'export GEMINI_SANDBOX=false'; \
+      echo 'export GEMINI_CLI_TRUST_WORKSPACE=true'; \
+      echo '# SANDBOX=1 = "already inside sandbox" — bypasses entire sandbox setup block'; \
+      echo '# in gemini.tsx regardless of GEMINI_SANDBOX setting or defaults'; \
+      echo 'export SANDBOX=1'; \
+      echo 'exec /usr/local/bin/gemini-real "$@"'; \
+    } > /usr/local/bin/gemini && \
     chmod +x /usr/local/bin/gemini && \
     echo "=== gemini wrapper ===" && cat /usr/local/bin/gemini
 

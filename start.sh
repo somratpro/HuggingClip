@@ -328,20 +328,21 @@ if [ "$PAPERCLIP_READY" = true ]; then
         echo "Admin account already configured"
     fi
 
-    # ── Gemini stderr diagnostic (captures actual error after "Fatal error:") ──
+    # ── Gemini diagnostic: test direct invocation + show wrapper env log ──────
     echo ""
-    echo "=== Gemini full-stderr diagnostic ==="
+    echo "=== Gemini diagnostic ==="
     HOME=/home/paperclip runuser -u paperclip -- \
         /usr/local/bin/gemini --output-format json "Respond with hello." \
         >/tmp/gemini-diag.out 2>/tmp/gemini-diag.err || true
-    echo "exit=$?"
-    echo "--- wrapper content ---"
-    cat /usr/local/bin/gemini
-    echo "--- stdout ---"
-    cat /tmp/gemini-diag.out 2>/dev/null | head -20 || true
-    echo "--- full stderr ---"
-    cat /tmp/gemini-diag.err 2>/dev/null || true
-    echo "=== end gemini diagnostic ==="
+    echo "startup-probe exit=$?"
+    echo "--- stdout (first 5 lines) ---"
+    head -5 /tmp/gemini-diag.out 2>/dev/null || true
+    echo "--- stderr ---"
+    cat /tmp/gemini-diag.err 2>/dev/null | head -10 || true
+    echo ""
+    echo "NOTE: After clicking 'Test now' in UI, run:"
+    echo "  cat /tmp/gemini-wrapper.log  (shows env Paperclip passes)"
+    echo "=== end diagnostic ==="
     echo ""
 
 else
