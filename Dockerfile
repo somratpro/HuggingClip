@@ -61,13 +61,23 @@ RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 # 1. Drop cloudflare-proxy.js NODE_OPTIONS (would conflict with their HTTP)
 # 2. Pre-set --max-old-space-size=4096 so gemini doesn't trigger heap-size
 #    self-relaunch (the spawn fails in HF Spaces containers)
-RUN for cmd in claude gemini codex; do \
+RUN for cmd in claude codex; do \
         if [ -e /usr/local/bin/$cmd ]; then \
             mv /usr/local/bin/$cmd /usr/local/bin/${cmd}-real && \
             printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexec /usr/local/bin/%s-real "$@"\n' "$cmd" > /usr/local/bin/$cmd && \
             chmod +x /usr/local/bin/$cmd; \
         fi; \
     done
+
+# Gemini wrapper: also hard-code headless env vars so they survive even when
+# Paperclip spawns gemini with a custom env object (no env inheritance fallback).
+# GEMINI_SANDBOX=false  — skip Docker sandbox attempt in containers
+# GEMINI_CLI_TRUST_WORKSPACE=true — skip interactive trust prompt (causes relaunch)
+RUN if [ -e /usr/local/bin/gemini ]; then \
+        mv /usr/local/bin/gemini /usr/local/bin/gemini-real && \
+        printf '#!/bin/sh\nunset NODE_OPTIONS\nexport NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"\nexport GEMINI_SANDBOX=false\nexport GEMINI_CLI_TRUST_WORKSPACE=true\nexec /usr/local/bin/gemini-real "$@"\n' > /usr/local/bin/gemini && \
+        chmod +x /usr/local/bin/gemini; \
+    fi
 
 # Install Python dependencies for sync
 RUN pip install --no-cache-dir --break-system-packages huggingface_hub PyYAML

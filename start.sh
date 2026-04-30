@@ -325,29 +325,6 @@ if [ "$PAPERCLIP_READY" = true ]; then
         echo "Admin account already configured"
     fi
 
-    # ── Agent CLI diagnostic (helps debug adapter failures) ──────────────────
-    echo ""
-    echo "=== Agent CLI Diagnostic ==="
-    echo "[wrapper script content]"
-    cat /usr/local/bin/gemini 2>&1 || true
-    echo ""
-    echo "[node sees these flags via NODE_OPTIONS]"
-    HOME=/home/paperclip runuser -u paperclip -- /usr/local/bin/gemini-real -e "console.log('execArgv:', process.execArgv); console.log('NODE_OPTIONS:', process.env.NODE_OPTIONS);" 2>&1 || echo "FAILED: node flags check"
-    echo ""
-    echo "[gemini --version]"
-    HOME=/home/paperclip runuser -u paperclip -- /usr/local/bin/gemini --version 2>&1
-    echo "exit=$?"
-    echo ""
-    echo "[gemini hello probe — full output]"
-    HOME=/home/paperclip runuser -u paperclip -- /usr/local/bin/gemini --output-format json "Respond with hello." > /tmp/gemini-probe.out 2> /tmp/gemini-probe.err
-    PROBE_EXIT=$?
-    echo "exit=$PROBE_EXIT"
-    echo "--- stdout ---"
-    cat /tmp/gemini-probe.out 2>/dev/null | head -40 || true
-    echo "--- stderr ---"
-    cat /tmp/gemini-probe.err 2>/dev/null | head -40 || true
-    echo "=== End diagnostic ==="
-    echo ""
 else
     echo "Warning: Paperclip did not become ready in 90s"
 fi
