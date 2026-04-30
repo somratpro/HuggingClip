@@ -176,8 +176,13 @@ if [ -n "${CLOUDFLARE_PROXY_URL:-}" ] && [ -f /app/cloudflare-proxy.js ]; then
     _CF_NODE_OPTS="--require /app/cloudflare-proxy.js"
 fi
 
-# ── Disable Gemini CLI sandbox (would try to start Docker inside Docker) ─────
+# ── Gemini CLI environment ───────────────────────────────────────────────────
+# Disable sandbox (would try to start Docker inside Docker)
 export GEMINI_SANDBOX=false
+# Trust the workspace — paperclip user runs from /app/paperclip (root-owned).
+# Without this, gemini's relaunch child fails the trust check and parent reports
+# "Failed to relaunch the CLI process."
+export GEMINI_CLI_TRUST_WORKSPACE=true
 
 # ── Background sync loop ──────────────────────────────────────────────────────
 if [ -n "${HF_TOKEN:-}" ]; then
