@@ -37,9 +37,10 @@ export PAPERCLIP_ALLOWED_HOSTNAMES="${PAPERCLIP_ALLOWED_HOSTNAMES:-${_ALLOWED}}"
 export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 # Anthropic/Claude Code — set one or neither:
-#   ANTHROPIC_AUTH_TOKEN : subscription mode (OAuth token from ~/.claude/.credentials.json)
-#   ANTHROPIC_API_KEY    : API key mode (sk-ant-...)
-export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
+#   CLAUDE_CODE_OAUTH_TOKEN : long-lived OAuth token (sk-ant-oat01-..., 1 year)
+#                             Generate at: claude.ai/settings → "Claude Code" → "Create token"
+#   ANTHROPIC_API_KEY       : API key mode (sk-ant-api03-..., pay-per-use)
+export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 
 mkdir -p "${PAPERCLIP_HOME}"
@@ -68,9 +69,9 @@ if [ -z "${PAPERCLIP_AGENT_JWT_SECRET:-}" ]; then
 fi
 
 # ── Validate LLM providers ───────────────────────────────────────────────────
-if [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
+if [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
     echo "⚠️  WARNING: No LLM provider configured"
-    echo "   Set at least one of: GEMINI_API_KEY, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY"
+    echo "   Set at least one of: GEMINI_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY"
     echo "   Agents will fail to run without an LLM provider"
     echo ""
 fi
@@ -292,37 +293,13 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
-# ── Claude Code credentials ──────────────────────────────────────────────────
-# ANTHROPIC_AUTH_TOKEN may not reach the claude subprocess if Paperclip spawns
-# with a restricted env. Writing ~/.claude/.credentials.json bypasses that —
-# Claude Code reads OAuth tokens directly from the filesystem.
-if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
-    mkdir -p /home/paperclip/.claude
-    python3 -c "
-import json, os
-creds = {
-    'claudeAiOauth': {
-        'accessToken': os.environ['ANTHROPIC_AUTH_TOKEN'],
-        'refreshToken': '',
-        'expiresAt': 9999999999999,
-        'scopes': ['user:inference']
-    }
-}
-with open('/home/paperclip/.claude/.credentials.json', 'w') as f:
-    json.dump(creds, f)
-"
-    chmod 600 /home/paperclip/.claude/.credentials.json
-    chown -R paperclip:paperclip /home/paperclip/.claude
-fi
-
 # ── Codex API key config ─────────────────────────────────────────────────────
+# forced_login_method="api" tells codex to read OPENAI_API_KEY from env.
+# Note: [model_providers.openai] is a reserved built-in — cannot override it.
 if [ -n "${OPENAI_API_KEY:-}" ]; then
     mkdir -p /home/paperclip/.codex
-    cat > /home/paperclip/.codex/config.toml <<TOMLEOF
+    cat > /home/paperclip/.codex/config.toml <<'TOMLEOF'
 forced_login_method = "api"
-
-[model_providers.openai]
-experimental_bearer_token = "${OPENAI_API_KEY}"
 TOMLEOF
     chmod 600 /home/paperclip/.codex/config.toml
     chown -R paperclip:paperclip /home/paperclip/.codex

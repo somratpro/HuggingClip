@@ -58,17 +58,17 @@ RUN npm init -y && npm install express@4 cors morgan
 RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @openai/codex
 
 # Claude Code wrapper — auth mode selection:
-#   ANTHROPIC_AUTH_TOKEN set → subscription mode (OAuth token, takes priority)
-#   ANTHROPIC_API_KEY set    → API key mode
-#   Neither set              → uses stored OAuth credentials in ~/.claude/
-# If both are set, subscription token wins: unset API key to avoid conflict.
+#   CLAUDE_CODE_OAUTH_TOKEN set → long-lived subscription OAuth token (sk-ant-oat01-...)
+#                                 takes priority; unset API key to avoid conflict
+#   ANTHROPIC_API_KEY set       → API key mode (pay-per-use)
+#   Neither set                 → uses stored credentials in ~/.claude/
 # Also drops cloudflare NODE_OPTIONS and caps heap size.
 RUN if [ -e /usr/local/bin/claude ]; then \
     mv /usr/local/bin/claude /usr/local/bin/claude-real && \
     { \
       echo '#!/bin/sh'; \
       echo 'unset NODE_OPTIONS'; \
-      echo '[ -n "$ANTHROPIC_AUTH_TOKEN" ] && unset ANTHROPIC_API_KEY'; \
+      echo '[ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && unset ANTHROPIC_API_KEY'; \
       echo 'export NODE_OPTIONS="--max-old-space-size=4096 --no-deprecation --no-warnings"'; \
       echo 'exec /usr/local/bin/claude-real "$@"'; \
     } > /usr/local/bin/claude && \
