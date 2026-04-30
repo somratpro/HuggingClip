@@ -10,9 +10,7 @@ license: mit
 secrets:
   - name: HF_TOKEN
     description: Hugging Face API token for database backup.
-  - name: CLOUDFLARE_WORKERS_TOKEN
-    description: Optional Cloudflare API token for outbound proxy setup.
-  - name: ANTHROPIC_API_KEY
+  - name: CLAUDE_CODE_OAUTH_TOKEN
     description: Anthropic Claude API key for Claude-powered agents.
   - name: GEMINI_API_KEY
     description: Google Gemini API key for Gemini-powered agents.
@@ -286,9 +284,11 @@ Similar projects by [@somratpro](https://github.com/somratpro) — all free, one
 If HuggingClip saves you time, consider buying me a coffee to keep the projects alive!
 
 **USDT (TRC-20 / TRON network only)**
+
 ```
 TELx8TJz1W1h7n6SgpgGNNGZXpJCEUZrdB
 ```
+
 > [!WARNING]
 > Send **USDT on TRC-20 network only**. Sending other tokens or using a different network will result in permanent loss.
 
