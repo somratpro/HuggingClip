@@ -294,12 +294,20 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # ── Codex API key config ─────────────────────────────────────────────────────
-# forced_login_method="api" tells codex to read OPENAI_API_KEY from env.
-# Note: [model_providers.openai] is a reserved built-in — cannot override it.
+# forced_login_method="api" alone isn't enough — codex reads the key from its
+# credentials store, not from OPENAI_API_KEY env var (which Paperclip may not
+# pass to subprocesses). Workaround: custom provider with experimental_bearer_token
+# baked in. Can't use [model_providers.openai] — reserved built-in ID.
 if [ -n "${OPENAI_API_KEY:-}" ]; then
     mkdir -p /home/paperclip/.codex
-    cat > /home/paperclip/.codex/config.toml <<'TOMLEOF'
+    cat > /home/paperclip/.codex/config.toml <<TOMLEOF
 forced_login_method = "api"
+model_provider = "openai-hf"
+
+[model_providers.openai-hf]
+base_url = "https://api.openai.com/v1"
+experimental_bearer_token = "${OPENAI_API_KEY}"
+requires_openai_auth = false
 TOMLEOF
     chmod 600 /home/paperclip/.codex/config.toml
     chown -R paperclip:paperclip /home/paperclip/.codex
