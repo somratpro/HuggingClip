@@ -16,6 +16,8 @@ secrets:
     description: Google Gemini API key for Gemini-powered agents.
   - name: OPENAI_API_KEY
     description: OpenAI API key for GPT-powered agents.
+  - name: UPTIMEROBOT_API_KEY
+    description: UptimeRobot API key for automatic monitor setup.
 ---
 
 <!-- Badges -->
@@ -48,7 +50,7 @@ secrets:
 - ⚡ **One-click deploy:** Duplicate the Space and add your API key — nothing else needed to get started.
 - 💾 **Persistent Database:** PostgreSQL database auto-backed up to a private HF Dataset and restored on every restart — no data loss.
 - 📊 **Visual Dashboard:** Real-time status dashboard at `/` with Paperclip service health, backup status, and uptime.
-- ⏰ **Keep-Alive:** Set up a one-time UptimeRobot monitor from the dashboard to prevent free Spaces from sleeping.
+- ⏰ **Keep-Alive:** Add `UPTIMEROBOT_API_KEY` as a Space secret and the monitor is created automatically at boot — no manual setup.
 - 🌐 **Cloudflare Proxy:** Auto-provisions a Cloudflare Worker proxy for blocked outbound connections.
 - 🔒 **Secure by Default:** Auth secrets randomly generated on first boot and persisted across restarts.
 - 🏠 **100% HF-Native:** Runs entirely on Hugging Face's free infrastructure.
@@ -141,7 +143,7 @@ HuggingClip will:
 | :--- | :--- | :--- |
 | `CLOUDFLARE_WORKERS_TOKEN` | — | Cloudflare API token |
 | `CLOUDFLARE_ACCOUNT_ID` | auto | Optional account ID override |
-| `CLOUDFLARE_PROXY_DOMAINS` | `*` | Domains to proxy (or `*` for all external) |
+| `CLOUDFLARE_PROXY_DOMAINS` | — | Extra domains to proxy, merged with built-in defaults. Set to `*` to proxy all external traffic. |
 
 ## 💾 Database Backup *(Optional)*
 
@@ -160,21 +162,7 @@ HuggingClip automatically backs up your Paperclip PostgreSQL database to a priva
 
 ## 💓 Staying Alive *(Recommended on Free HF Spaces)*
 
-Free Hugging Face Spaces can sleep after inactivity. Set up an external UptimeRobot monitor from the dashboard to keep your Space awake.
-
-Use the **Main API key** from UptimeRobot — not the Read-only key or a Monitor-specific key.
-
-**Setup:**
-
-1. Open the dashboard at `/`.
-2. Find **Keep Space Awake**.
-3. Paste your UptimeRobot **Main API key**.
-4. Click **Create Monitor**.
-
-HuggingClip creates a monitor for `https://your-space.hf.space/health`. UptimeRobot pings it from outside HF every 5 minutes.
-
-> [!NOTE]
-> This works for **public** Spaces only. Private Spaces cannot be reached by external monitors.
+Add your [UptimeRobot](https://uptimerobot.com/) **Main API key** (not the Read-only or Monitor-specific key) as a Space secret named `UPTIMEROBOT_API_KEY`. HuggingClip will automatically create a monitor for `https://your-space.hf.space/health` at boot. The dashboard shows the current status (configured, setting up, or failed).
 
 ## 💻 Local Development
 
@@ -253,7 +241,7 @@ Verify `HF_TOKEN` is set and has write access. Check the dashboard backup status
 `HF_TOKEN` is not set. Add it and the next restart will restore from backup. The backup also needs to have been run at least once before the restart.
 
 **Space keeps sleeping**
-Open `/` and use **Keep Space Awake** to create an external UptimeRobot monitor. Requires a public Space.
+Add `UPTIMEROBOT_API_KEY` as a Space secret to enable automatic keep-awake monitoring.
 
 **Paperclip unreachable (502 errors)**
 Wait 60–90s after boot for Paperclip to initialize. If it stays unreachable, check logs for PostgreSQL connection errors or memory issues.

@@ -208,6 +208,12 @@ fi
 # ── Health server ─────────────────────────────────────────────────────────────
 node /app/health-server.js &
 HEALTH_PID=$!
+
+if [ -n "${UPTIMEROBOT_API_KEY:-}" ] && [ -n "${SPACE_HOST:-}" ]; then
+  echo "Setting up UptimeRobot monitor..."
+  bash /app/setup-uptimerobot.sh "${SPACE_HOST}" || true
+fi
+
 sleep 2
 
 # ── Paperclip instance config ─────────────────────────────────────────────────
