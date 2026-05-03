@@ -126,7 +126,6 @@ COPY health-server.js /app/
 COPY paperclip-sync.py /app/
 COPY cloudflare-proxy.js /app/
 COPY cloudflare-proxy-setup.py /app/
-COPY cloudflare-worker.js /app/
 COPY cloudflare-keepalive-setup.py /app/
 
 RUN chmod +x /app/start.sh /app/cloudflare-keepalive-setup.py
