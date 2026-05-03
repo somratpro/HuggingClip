@@ -127,9 +127,9 @@ COPY paperclip-sync.py /app/
 COPY cloudflare-proxy.js /app/
 COPY cloudflare-proxy-setup.py /app/
 COPY cloudflare-worker.js /app/
-COPY setup-uptimerobot.sh /app/
+COPY cloudflare-keepalive-setup.py /app/
 
-RUN chmod +x /app/start.sh /app/setup-uptimerobot.sh
+RUN chmod +x /app/start.sh /app/cloudflare-keepalive-setup.py
 
 # Create non-root user for running Paperclip + agent CLIs
 # Claude Code refuses --dangerously-skip-permissions when running as root

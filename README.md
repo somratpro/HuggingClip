@@ -16,8 +16,8 @@ secrets:
     description: Google Gemini API key for Gemini-powered agents.
   - name: OPENAI_API_KEY
     description: OpenAI API key for GPT-powered agents.
-  - name: UPTIMEROBOT_API_KEY
-    description: UptimeRobot API key for automatic monitor setup.
+  - name: CLOUDFLARE_WORKERS_TOKEN
+    description: "Cloudflare API token — auto-creates a Worker proxy and KeepAlive monitor."
 ---
 
 <!-- Badges -->
@@ -50,7 +50,7 @@ secrets:
 - ⚡ **One-click deploy:** Duplicate the Space and add your API key — nothing else needed to get started.
 - 💾 **Persistent Database:** PostgreSQL database auto-backed up to a private HF Dataset and restored on every restart — no data loss.
 - 📊 **Visual Dashboard:** Real-time status dashboard at `/` with Paperclip service health, backup status, and uptime.
-- ⏰ **Keep-Alive:** Add `UPTIMEROBOT_API_KEY` as a Space secret and the monitor is created automatically at boot — no manual setup.
+- ⏰ **Keep-Alive:** Uses `CLOUDFLARE_WORKERS_TOKEN` to automatically set up a cron-triggered keep-awake worker at boot.
 - 🌐 **Cloudflare Proxy:** Auto-provisions a Cloudflare Worker proxy for blocked outbound connections.
 - 🔒 **Secure by Default:** Auth secrets randomly generated on first boot and persisted across restarts.
 - 🏠 **100% HF-Native:** Runs entirely on Hugging Face's free infrastructure.
@@ -110,6 +110,7 @@ No secrets are strictly required to start, but you need at least one LLM key to 
 | `BETTER_AUTH_SECRET` | auto-generated | Auth secret (auto-persisted on first boot) |
 | `PAPERCLIP_AGENT_JWT_SECRET` | auto-generated | Agent JWT secret (auto-persisted on first boot) |
 | `SYNC_MAX_FILE_BYTES` | `52428800` | Max backup size in bytes (50MB default) |
+| `CLOUDFLARE_KEEPALIVE_ENABLED` | `true` | Set to `false` to disable the automatic Cloudflare KeepAlive worker |
 
 ## 🤖 LLM Providers
 
@@ -162,7 +163,7 @@ HuggingClip automatically backs up your Paperclip PostgreSQL database to a priva
 
 ## 💓 Staying Alive *(Recommended on Free HF Spaces)*
 
-Add your [UptimeRobot](https://uptimerobot.com/) **Main API key** (not the Read-only or Monitor-specific key) as a Space secret named `UPTIMEROBOT_API_KEY`. HuggingClip will automatically create a monitor for `https://your-space.hf.space/health` at boot. The dashboard shows the current status (configured, setting up, or failed).
+Your Space will automatically be kept awake by a background Cloudflare Worker when you configure the `CLOUDFLARE_WORKERS_TOKEN` secret. The worker uses a cron trigger to regularly ping your Space's `/health` endpoint. The dashboard displays the current keep-alive worker status.
 
 ## 💻 Local Development
 
@@ -241,7 +242,7 @@ Verify `HF_TOKEN` is set and has write access. Check the dashboard backup status
 `HF_TOKEN` is not set. Add it and the next restart will restore from backup. The backup also needs to have been run at least once before the restart.
 
 **Space keeps sleeping**
-Add `UPTIMEROBOT_API_KEY` as a Space secret to enable automatic keep-awake monitoring.
+Add `CLOUDFLARE_WORKERS_TOKEN` as a Space secret to enable automatic keep-awake monitoring via Cloudflare Workers.
 
 **Paperclip unreachable (502 errors)**
 Wait 60–90s after boot for Paperclip to initialize. If it stays unreachable, check logs for PostgreSQL connection errors or memory issues.
@@ -258,6 +259,7 @@ Similar projects by [@somratpro](https://github.com/somratpro) — all free, one
 
 | Project | What it runs | HF Space | GitHub |
 | :--- | :--- | :--- | :--- |
+| **HuggingMess** | Hermes — Self-hosted agent gateway | [Space](https://huggingface.co/spaces/somratpro/HuggingMess) | [Repo](https://github.com/somratpro/huggingmess) |
 | **HuggingClaw** | OpenClaw — Claude Code in the browser | [Space](https://huggingface.co/spaces/somratpro/HuggingClaw) | [Repo](https://github.com/somratpro/huggingclaw) |
 | **Hugging8n** | n8n — workflow & automation platform | [Space](https://huggingface.co/spaces/somratpro/Hugging8n) | [Repo](https://github.com/somratpro/hugging8n) |
 

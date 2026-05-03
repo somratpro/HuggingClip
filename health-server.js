@@ -3,20 +3,13 @@ const http = require("http");
 const fs = require("fs");
 const net = require("net");
 
-const PORT = 7861; // always public-facing port, never read from PORT (that's for Paperclip)
-const PAPERCLIP_HOST = "127.0.0.1";
-const PAPERCLIP_PORT = 3100;
+const PORT = 7861;
+const APP_PORT = 3100;
+const APP_HOST = "127.0.0.1";
 const startTime = Date.now();
-
-const HF_BACKUP_ENABLED = !!process.env.HF_TOKEN;
-const SYNC_INTERVAL = process.env.SYNC_INTERVAL || "86400";
-
-const UPTIMEROBOT_STATUS_FILE = "/tmp/huggingclip-uptimerobot-status.json";
-const UPTIMEROBOT_API_KEY_SET = !!process.env.UPTIMEROBOT_API_KEY;
-
-// ============================================================================
-// URL helpers
-// ============================================================================
+const INVITE_URL_FILE = "/tmp/invite-url.txt";
+const SYNC_STATUS_FILE = "/tmp/sync-status.json";
+const CLOUDFLARE_KEEPALIVE_STATUS_FILE = "/tmp/huggingclip-cloudflare-keepalive-status.json";
 
 function parseRequestUrl(url) {
   try {
@@ -26,591 +19,306 @@ function parseRequestUrl(url) {
   }
 }
 
-function isLocalRoute(pathname) {
-  return pathname === "/health" || pathname === "/status";
-}
-
-// ============================================================================
-// UptimeRobot helpers
-// ============================================================================
-
-function getUptimeRobotStatus() {
+function getSyncStatus() {
   try {
-    if (fs.existsSync(UPTIMEROBOT_STATUS_FILE)) {
-      return JSON.parse(fs.readFileSync(UPTIMEROBOT_STATUS_FILE, "utf8"));
+    if (fs.existsSync(SYNC_STATUS_FILE)) {
+      return JSON.parse(fs.readFileSync(SYNC_STATUS_FILE, "utf8"));
     }
   } catch {}
-  return null;
-}
-
-// ============================================================================
-// Status helpers
-// ============================================================================
-
-function readSyncStatus() {
-  try {
-    if (fs.existsSync("/tmp/sync-status.json")) {
-      return JSON.parse(fs.readFileSync("/tmp/sync-status.json", "utf8"));
-    }
-  } catch {}
-  if (HF_BACKUP_ENABLED) {
+  if (process.env.HF_TOKEN) {
     return {
-      db_status: "unknown",
-      last_sync_time: null,
-      last_error: null,
-      sync_count: 0,
       status: "configured",
-      message: `Backup enabled. Waiting for first sync (every ${SYNC_INTERVAL}s).`,
+      message: `Backup is enabled. Waiting for sync window (${process.env.SYNC_INTERVAL || 3600}s).`,
     };
   }
-  return { db_status: "unknown", last_sync_time: null, last_error: null, sync_count: 0 };
+  return { status: "disabled", message: "HF_TOKEN not set" };
 }
 
-function readInviteUrl() {
+function getKeepaliveStatus() {
   try {
-    if (fs.existsSync("/tmp/invite-url.txt")) {
-      return fs.readFileSync("/tmp/invite-url.txt", "utf8").trim();
+    if (fs.existsSync(CLOUDFLARE_KEEPALIVE_STATUS_FILE)) {
+      return JSON.parse(fs.readFileSync(CLOUDFLARE_KEEPALIVE_STATUS_FILE, "utf8"));
     }
   } catch {}
   return null;
 }
 
-function checkPaperclipHealth() {
+function getInviteUrl() {
+  try {
+    if (fs.existsSync(INVITE_URL_FILE)) {
+      return fs.readFileSync(INVITE_URL_FILE, "utf8").trim();
+    }
+  } catch {}
+  return null;
+}
+
+function probeAppHealth(timeoutMs = 1500) {
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve({ status: "unreachable", reason: "timeout" }), 5000);
-    http.get(`http://${PAPERCLIP_HOST}:${PAPERCLIP_PORT}/api/health`, (res) => {
-      clearTimeout(timeout);
-      resolve({ status: res.statusCode < 500 ? "running" : "error", statusCode: res.statusCode });
-      res.resume();
-    }).on("error", (err) => {
-      clearTimeout(timeout);
-      resolve({ status: "unreachable", reason: err.message });
+    const request = http.get(
+      {
+        hostname: APP_HOST,
+        port: APP_PORT,
+        path: "/api/health",
+        timeout: timeoutMs,
+      },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode >= 200 && response.statusCode < 400);
+      },
+    );
+    request.on("timeout", () => {
+      request.destroy();
+      resolve(false);
     });
+    request.on("error", () => resolve(false));
   });
 }
 
-function formatUptime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return `${h}h ${m}m`;
+function formatUptime(ms) {
+  const total = Math.floor(ms / 1000);
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (days) return `${days}d ${hours}h ${minutes}m`;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
-// ============================================================================
-// Dashboard HTML
-// ============================================================================
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
-function renderDashboard(initialData) {
-  const uptimerobotStatus = getUptimeRobotStatus();
-  let keepAwakeHtml;
-  if (uptimerobotStatus?.configured) {
-    keepAwakeHtml = `<div class="helper-summary success">
-      <span class="status-badge status-online"><div class="pulse"></div>Configured</span>
-      <span>UptimeRobot monitor active for <code>${uptimerobotStatus.url || "your /health endpoint"}</code>.</span>
-    </div>`;
-  } else if (uptimerobotStatus?.configured === false) {
-    keepAwakeHtml = `<div class="helper-summary error">
-      <span class="status-badge status-error">Failed</span>
-      <span>Monitor setup failed. Check Space logs.</span>
-    </div>`;
-  } else if (UPTIMEROBOT_API_KEY_SET) {
-    keepAwakeHtml = `<div class="helper-summary"><span class="status-badge status-syncing"><div class="pulse" style="background:#3b82f6"></div>Setting up</span> Setting up UptimeRobot monitor...</div>`;
-  } else {
-    keepAwakeHtml = `<div class="helper-summary">
-      <strong>Not configured.</strong> Add <code>UPTIMEROBOT_API_KEY</code> to Space secrets to enable keep-awake monitoring.
-    </div>`;
-  }
+function toneBadge(label, tone = "neutral") {
+  return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
+}
 
-  const syncStatus = initialData.sync;
-  const hasBackup = HF_BACKUP_ENABLED;
-  const lastSync = syncStatus.last_sync_time
-    ? new Date(syncStatus.last_sync_time).toLocaleString()
-    : "Never";
-  const syncError = syncStatus.last_error || null;
-  const syncOk = hasBackup && !syncError && syncStatus.last_sync_time;
+function renderTile({ title, value, detail = "", tone = "neutral", meta = "" }) {
+  return `<article class="tile ${tone}">
+    <div class="tile-head">
+      <span class="tile-title">${escapeHtml(title)}</span>
+      <span class="tile-dot"></span>
+    </div>
+    <div class="tile-value">${value}</div>
+    ${detail ? `<div class="tile-detail">${detail}</div>` : ""}
+    ${meta ? `<div class="tile-meta">${meta}</div>` : ""}
+  </article>`;
+}
 
-  const syncBadge = !hasBackup
-    ? `<div class="status-badge status-offline">Disabled</div>`
-    : syncError
-    ? `<div class="status-badge status-error">Error</div>`
-    : syncStatus.last_sync_time
-    ? `<div class="status-badge status-online"><div class="pulse"></div>Enabled</div>`
-    : `<div class="status-badge status-syncing"><div class="pulse" style="background:#3b82f6"></div>Pending</div>`;
+function renderDashboard(data) {
+  const syncStatus = String(data.sync?.status || "unknown");
+  const syncTone = ["success", "restored", "synced", "configured"].includes(syncStatus)
+    ? "ok"
+    : syncStatus === "disabled"
+      ? "warn"
+      : "neutral";
+  const backupDetail = data.sync?.message ? escapeHtml(data.sync.message) : "No status yet";
 
-  const paperclipBadge = initialData.paperclipRunning
-    ? `<div class="status-badge status-online"><div class="pulse"></div>Running</div>`
-    : `<div class="status-badge status-offline">Unreachable</div>`;
+  const keepaliveConfigured = data.keepalive?.configured === true;
+  const keepaliveStatus = String(
+    data.keepalive?.status ||
+      (process.env.CLOUDFLARE_WORKERS_TOKEN ? "pending" : "not configured"),
+  );
+  const keepAliveTone = keepaliveConfigured
+    ? "ok"
+    : process.env.CLOUDFLARE_WORKERS_TOKEN
+      ? "warn"
+      : "neutral";
+  const keepAliveDetail = keepaliveConfigured
+    ? `Pinging <code>${escapeHtml(data.keepalive.targetUrl || "/health")}</code>`
+    : process.env.CLOUDFLARE_WORKERS_TOKEN
+      ? "Worker pending or failed"
+      : "Not configured";
 
-  const inviteUrl = initialData.inviteUrl;
-  const setupBannerHtml = inviteUrl ? `
-    <div class="setup-banner">
-      <div class="setup-banner-title">Admin Setup Required</div>
-      <div class="setup-banner-body">No admin account configured. Open this link to create your first admin account:</div>
-      <div class="setup-banner-url">${inviteUrl}</div>
-      <a href="${inviteUrl}" class="setup-banner-btn" target="_blank" rel="noopener noreferrer">Open Setup Page →</a>
-    </div>` : "";
+  const inviteUrl = getInviteUrl();
 
-  return `<!DOCTYPE html>
+  const tiles = [
+    renderTile({
+      title: "Paperclip Core",
+      value: toneBadge(data.appReady ? "Online" : "Booting", data.appReady ? "ok" : "warn"),
+      detail: `Backend Port ${APP_PORT}`,
+      tone: data.appReady ? "ok" : "warn",
+    }),
+    renderTile({
+      title: "Database",
+      value: toneBadge("PostgreSQL", "ok"),
+      detail: "Embedded cluster active",
+      tone: "ok",
+    }),
+    renderTile({
+      title: "Runtime",
+      value: escapeHtml(data.uptimeHuman),
+      detail: `Exposed on port ${PORT}`,
+      tone: "neutral",
+    }),
+    renderTile({
+      title: "Backup",
+      value: toneBadge(syncStatus.toUpperCase(), syncTone),
+      detail: backupDetail,
+      tone: syncTone,
+    }),
+    renderTile({
+      title: "Keep Awake",
+      value: toneBadge(keepaliveConfigured ? "CF Cron" : keepaliveStatus.toUpperCase(), keepAliveTone),
+      detail: keepAliveDetail,
+      tone: keepAliveTone,
+    }),
+  ].join("");
+
+  return `<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HuggingClip Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --accent: linear-gradient(135deg, #667eea, #764ba2);
-            --text: #f8fafc;
-            --text-dim: #94a3b8;
-            --success: #10b981;
-            --error: #ef4444;
-            --warning: #f59e0b;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Outfit', sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            padding: 24px 0;
-            background-image:
-                radial-gradient(at 0% 0%, rgba(102, 126, 234, 0.15) 0px, transparent 50%),
-                radial-gradient(at 100% 0%, rgba(118, 75, 162, 0.15) 0px, transparent 50%);
-        }
-        .dashboard {
-            width: 90%;
-            max-width: 600px;
-            background: var(--card-bg);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 24px;
-            padding: 40px;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-            animation: fadeIn 0.8s ease-out;
-            margin: 24px 0;
-        }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
-        header { text-align: center; margin-bottom: 40px; }
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 8px;
-            background: var(--accent);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-weight: 600;
-        }
-        .subtitle { color: var(--text-dim); font-size: 0.9rem; letter-spacing: 1px; text-transform: uppercase; }
-        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
-        .stat-card {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.05);
-            padding: 20px;
-            border-radius: 16px;
-            transition: transform 0.3s ease, border-color 0.3s ease;
-        }
-        .stat-card:hover { transform: translateY(-3px); border-color: rgba(102,126,234,0.3); }
-        .stat-label { color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 8px; display: block; }
-        .stat-value { font-size: 1.1rem; font-weight: 600; }
-        .stat-btn {
-            grid-column: span 2;
-            background: var(--accent);
-            color: #fff;
-            padding: 16px;
-            border-radius: 16px;
-            text-align: center;
-            text-decoration: none;
-            font-weight: 600;
-            display: block;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            box-shadow: 0 10px 20px -5px rgba(102,126,234,0.4);
-        }
-        .stat-btn:hover { transform: scale(1.02); box-shadow: 0 15px 30px -5px rgba(102,126,234,0.6); }
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        .status-online  { background: rgba(16,185,129,0.1); color: var(--success); }
-        .status-offline { background: rgba(239,68,68,0.1); color: var(--error); }
-        .status-syncing { background: rgba(59,130,246,0.1); color: #3b82f6; }
-        .status-error   { background: rgba(239,68,68,0.1); color: var(--error); }
-        .pulse {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: currentColor;
-            box-shadow: 0 0 0 0 rgba(16,185,129,0.7);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%   { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16,185,129,0.7); }
-            70%  { transform: scale(1);    box-shadow: 0 0 0 10px rgba(16,185,129,0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16,185,129,0); }
-        }
-        .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-        .card-header .stat-label { margin-bottom: 0; }
-        .sync-info { background: rgba(255,255,255,0.02); padding: 15px; border-radius: 12px; font-size: 0.85rem; color: var(--text-dim); margin-top: 10px; }
-        #sync-msg { color: var(--text); display: block; margin-top: 4px; }
-        .helper-card { width: 100%; margin-top: 20px; }
-        .helper-copy { color: var(--text-dim); font-size: 0.92rem; line-height: 1.6; margin-top: 10px; }
-        .helper-copy strong { color: var(--text); }
-        .helper-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-        .helper-input {
-            flex: 1; min-width: 240px;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
-            color: var(--text); border-radius: 12px;
-            padding: 14px 16px; font: inherit;
-        }
-        .helper-input::placeholder { color: var(--text-dim); }
-        .helper-button {
-            background: var(--accent); color: #fff; border: 0;
-            border-radius: 12px; padding: 14px 18px;
-            font: inherit; font-weight: 600; cursor: pointer; min-width: 180px;
-        }
-        .helper-button:disabled { opacity: 0.6; cursor: wait; }
-        .hidden { display: none !important; }
-        .helper-note { margin-top: 10px; font-size: 0.82rem; color: var(--text-dim); }
-        .helper-result { margin-top: 14px; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; display: none; }
-        .helper-result.ok    { display: block; background: rgba(16,185,129,0.1); color: var(--success); }
-        .helper-result.error { display: block; background: rgba(239,68,68,0.1); color: var(--error); }
-        .helper-shell { margin-top: 12px; }
-        .helper-shell.hidden { display: none; }
-        .helper-summary {
-            margin-top: 14px; padding: 12px 14px; border-radius: 12px;
-            background: rgba(255,255,255,0.03); color: var(--text-dim);
-            font-size: 0.9rem; line-height: 1.5;
-            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-        }
-        .helper-summary strong { color: var(--text); }
-        .helper-summary code { background: rgba(255,255,255,0.07); padding: 1px 6px; border-radius: 4px; font-size: 0.85em; color: var(--text); }
-        .helper-summary.success { background: rgba(16,185,129,0.08); }
-        .helper-summary.error { background: rgba(239,68,68,0.08); }
-        .helper-toggle {
-            margin-top: 14px; display: inline-flex; align-items: center; justify-content: center;
-            background: rgba(255,255,255,0.04); color: var(--text);
-            border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
-            padding: 12px 16px; font: inherit; font-weight: 600; cursor: pointer;
-        }
-        .setup-banner {
-            background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
-            border-radius: 16px; padding: 20px; margin-bottom: 20px;
-        }
-        .setup-banner-title { font-weight: 600; color: var(--warning); margin-bottom: 8px; }
-        .setup-banner-body { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 10px; }
-        .setup-banner-url {
-            font-family: monospace; font-size: 0.8rem; word-break: break-all;
-            background: rgba(255,255,255,0.04); border-radius: 8px;
-            padding: 8px 12px; margin-bottom: 12px; color: var(--text);
-        }
-        .setup-banner-btn {
-            display: inline-block; background: var(--warning); color: #000;
-            font-weight: 700; padding: 8px 20px; border-radius: 8px;
-            text-decoration: none; font-size: 0.9rem;
-        }
-        .links-row { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-        .link-btn {
-            flex: 1; min-width: 120px; text-align: center; padding: 10px 16px;
-            border-radius: 12px; text-decoration: none; font-size: 0.9rem; font-weight: 600;
-            transition: opacity 0.2s;
-        }
-        .link-btn:hover { opacity: 0.8; }
-        .link-primary { background: var(--accent); color: #fff; }
-        .link-secondary { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid rgba(255,255,255,0.08); }
-        .footer { text-align: center; color: var(--text-dim); font-size: 0.8rem; margin-top: 20px; }
-        @media (max-width: 700px) {
-            body { padding: 16px 0; }
-            .dashboard { width: calc(100% - 24px); padding: 24px; border-radius: 18px; margin: 12px 0; }
-            header { margin-bottom: 28px; }
-            h1 { font-size: 2rem; }
-            .stats-grid { grid-template-columns: 1fr; gap: 14px; margin-bottom: 16px; }
-            .stat-btn { grid-column: span 1; }
-            .helper-row { flex-direction: column; }
-            .helper-input, .helper-button { width: 100%; min-width: 0; }
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HuggingClip</title>
+  <style>
+    :root { color-scheme: dark; --bg:#08080f; --panel:#12111b; --panel2:#151421; --line:#26243a; --text:#f6f4ff; --muted:#7f7a9e; --soft:#b8b3d7; --good:#22c55e; --warn:#f5c542; --bad:#fb7185; --accent:#3b82f6; --accent2:#8b5cf6; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); font-size:13px; }
+    main { width:min(720px, calc(100% - 32px)); margin:0 auto; padding:36px 0 44px; }
+    header { text-align:center; margin-bottom:22px; }
+    h1 { margin:0; font-size:1.65rem; line-height:1; letter-spacing:0; }
+    .subtitle { margin-top:12px; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.14em; font-weight:800; }
+    .hero-action { display:flex; width:100%; min-height:46px; align-items:center; justify-content:center; border-radius:8px; background:linear-gradient(135deg, var(--accent), var(--accent2)); color:#ffffff; text-decoration:none; font-weight:850; font-size:.98rem; margin:24px 0 20px; transition: opacity 0.15s ease; }
+    .hero-action:hover { opacity: 0.9; }
+    .invite-banner { background:rgba(245,197,66,.1); border:1px solid rgba(245,197,66,.2); border-radius:8px; padding:12px 16px; margin-bottom:20px; display:flex; flex-direction:column; gap:6px; }
+    .invite-banner span { color:var(--warn); font-weight:850; font-size:.75rem; text-transform:uppercase; }
+    .invite-banner code { font-size:1rem; padding:8px; margin-top:4px; display:block; overflow-wrap:anywhere; }
+    .overview { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-bottom:10px; }
+    .tile { border:1px solid var(--line); background:var(--panel); border-radius:11px; padding:18px; min-height:124px; display:flex; flex-direction:column; gap:10px; position:relative; }
+    .tile.ok { border-color:rgba(34,197,94,.22); }
+    .tile.warn { border-color:rgba(245,197,66,.24); }
+    .tile.off { border-color:rgba(251,113,133,.28); }
+    .tile-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .tile-title { color:var(--muted); font-size:.67rem; letter-spacing:.18em; text-transform:uppercase; font-weight:850; }
+    .tile-dot { width:7px; height:7px; border-radius:50%; background:var(--line); }
+    .tile.ok .tile-dot { background:var(--good); }
+    .tile.warn .tile-dot { background:var(--warn); }
+    .tile.off .tile-dot { background:var(--bad); }
+    .tile-value { font-size:1.12rem; font-weight:850; overflow-wrap:anywhere; }
+    .tile-detail { color:var(--soft); line-height:1.45; font-size:.83rem; }
+    .tile-meta { color:var(--muted); line-height:1.4; font-size:.75rem; margin-top:auto; overflow-wrap:anywhere; }
+
+    code { background:#232234; border:1px solid #34324c; border-radius:6px; padding:2px 6px; color:var(--text); font-size:.9em; }
+    .badge { display:inline-flex; align-items:center; width:max-content; border:1px solid var(--line); border-radius:999px; padding:5px 10px; font-size:.72rem; font-weight:850; line-height:1; text-transform:uppercase; }
+    .badge.ok { color:var(--good); border-color:rgba(34,197,94,.34); background:rgba(34,197,94,.11); }
+    .badge.warn { color:var(--warn); border-color:rgba(245,197,66,.34); background:rgba(245,197,66,.11); }
+    .badge.off { color:var(--bad); border-color:rgba(251,113,133,.34); background:rgba(251,113,133,.11); }
+    .badge.neutral { color:var(--soft); }
+    footer { color:var(--muted); text-align:center; font-size:.74rem; margin-top:18px; }
+    footer .live { color:var(--good); }
+    @media (max-width: 700px) { .overview { grid-template-columns:1fr; } main { width:min(100% - 22px, 720px); padding-top:28px; } }
+  </style>
 </head>
 <body>
-    <div class="dashboard">
-        <header>
-            <h1>📎 HuggingClip</h1>
-            <p class="subtitle">Paperclip on HF Spaces</p>
-        </header>
-
-        ${setupBannerHtml}
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="card-header">
-                    <span class="stat-label">Paperclip</span>
-                    <span id="paperclip-badge">${paperclipBadge}</span>
-                </div>
-                <div style="margin-top: 8px; font-size: 0.82rem; color: var(--text-dim);">
-                    Port <strong style="color:var(--text)">3100</strong> · <a href="/app/" style="color:#818cf8;text-decoration:none;" target="_blank">Open UI →</a>
-                </div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-label">Uptime</span>
-                <span class="stat-value" id="uptime">${formatUptime(Math.floor((Date.now() - startTime) / 1000))}</span>
-            </div>
-            <div class="stat-card">
-                <div class="card-header">
-                    <span class="stat-label">Backup</span>
-                    <span id="sync-badge">${syncBadge}</span>
-                </div>
-                <div style="margin-top: 8px; font-size: 0.82rem; color: var(--text-dim);">
-                    Last sync: <span id="last-sync">${lastSync}</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-label">Database</span>
-                <span class="stat-value" id="db-status">${syncStatus.db_status === "connected" ? "PostgreSQL ✓" : syncStatus.db_status === "error" ? "Error" : "PostgreSQL"}</span>
-            </div>
-            <a href="/app/" id="open-ui-btn" class="stat-btn" target="_blank" rel="noopener noreferrer">Open Paperclip UI</a>
-        </div>
-
-        <div class="stat-card" style="width: 100%; margin-bottom: 20px;">
-            <div class="card-header">
-                <span class="stat-label">Backup Sync</span>
-                <div id="sync-badge-detail">${syncBadge}</div>
-            </div>
-            <div class="sync-info">
-                Last activity: <span id="sync-time-detail">${lastSync}</span>
-                <span id="sync-msg">${syncError ? "Error: " + syncError : syncStatus.last_sync_time ? "Sync successful" : hasBackup ? "Waiting for first sync..." : "HF_TOKEN not set — backups disabled"}</span>
-            </div>
-        </div>
-
-        <div class="stat-card helper-card">
-            <span class="stat-label">Keep Space Awake</span>
-            ${keepAwakeHtml}
-        </div>
-
-        <div class="footer">Live updates every 30s</div>
-    </div>
-
-    <script>
-        function getCurrentSearch() { return window.location.search || ''; }
-
-        function renderSyncBadge(status, lastSyncTime, lastError) {
-            if (!${hasBackup}) return '<div class="status-badge status-offline">Disabled</div>';
-            if (lastError) return '<div class="status-badge status-error">Error</div>';
-            if (lastSyncTime) return '<div class="status-badge status-online"><div class="pulse"></div>Enabled</div>';
-            return '<div class="status-badge status-syncing"><div class="pulse" style="background:#3b82f6"></div>Pending</div>';
-        }
-
-        async function updateStatus() {
-            try {
-                const res = await fetch('/status' + getCurrentSearch());
-                const data = await res.json();
-
-                document.getElementById('uptime').textContent = data.uptime;
-
-                const pbadge = data.paperclipRunning
-                    ? '<div class="status-badge status-online"><div class="pulse"></div>Running</div>'
-                    : '<div class="status-badge status-offline">Unreachable</div>';
-                document.getElementById('paperclip-badge').innerHTML = pbadge;
-
-                const badge = renderSyncBadge(data.sync.db_status, data.sync.last_sync_time, data.sync.last_error);
-                document.getElementById('sync-badge').innerHTML = badge;
-                document.getElementById('sync-badge-detail').innerHTML = badge;
-
-                const lastSync = data.sync.last_sync_time
-                    ? new Date(data.sync.last_sync_time).toLocaleString()
-                    : 'Never';
-                document.getElementById('last-sync').textContent = lastSync;
-                document.getElementById('sync-time-detail').textContent = lastSync;
-
-                const syncMsg = data.sync.last_error
-                    ? 'Error: ' + data.sync.last_error
-                    : data.sync.last_sync_time
-                    ? 'Sync successful'
-                    : ${hasBackup} ? 'Waiting for first sync...' : 'HF_TOKEN not set — backups disabled';
-                document.getElementById('sync-msg').textContent = syncMsg;
-
-                const dbEl = document.getElementById('db-status');
-                dbEl.textContent = data.sync.db_status === 'connected' ? 'PostgreSQL ✓'
-                    : data.sync.db_status === 'error' ? 'Error' : 'PostgreSQL';
-            } catch (e) {
-                console.error('Status update failed:', e);
-            }
-        }
-
-        updateStatus();
-        setInterval(updateStatus, 30000);
-    </script>
+  <main>
+    <header>
+      <h1>🧬 HuggingClip</h1>
+      <div class="subtitle">Paperclip Orchestrator Dashboard</div>
+    </header>
+    ${inviteUrl ? `
+    <div class="invite-banner">
+      <span>Admin Setup Required</span>
+      <code>${escapeHtml(inviteUrl)}</code>
+    </div>` : ""}
+    <a class="hero-action" href="/app/" target="_blank" rel="noopener noreferrer">Open Paperclip UI -></a>
+    <section class="overview">
+      ${tiles}
+    </section>
+    <footer><span class="live">Live</span> status - Health endpoint: <code>/health</code></footer>
+  </main>
 </body>
 </html>`;
 }
 
-// ============================================================================
-// HTTP Proxy helpers
-// ============================================================================
+const server = http.createServer(async (req, res) => {
+  const url = parseRequestUrl(req.url);
+  const pathname = url.pathname;
 
-function buildProxyHeaders(headers) {
-  const clientIp = (function() {
-    const f = headers["x-forwarded-for"];
-    if (typeof f === "string") return f.split(",")[0].trim();
-    if (Array.isArray(f) && f.length > 0) return String(f[0]).split(",")[0].trim();
-    return "";
-  })();
-  return {
-    ...headers,
-    host: `${PAPERCLIP_HOST}:${PAPERCLIP_PORT}`,
-    "x-forwarded-for": clientIp,
-    "x-forwarded-host": headers.host || "",
-    "x-forwarded-proto": headers["x-forwarded-proto"] || "https",
+  if (pathname === "/health") {
+    const appReady = await probeAppHealth();
+    res.writeHead(appReady ? 200 : 503, { "Content-Type": "application/json" });
+    return res.end(
+      JSON.stringify({
+        status: appReady ? "ok" : "booting",
+        uptime: formatUptime(Date.now() - startTime),
+        sync: getSyncStatus(),
+        keepalive: getKeepaliveStatus(),
+      }),
+    );
+  }
+
+  if (pathname === "/" || pathname === "/dashboard") {
+    const appReady = await probeAppHealth();
+    res.writeHead(200, { "Content-Type": "text/html" });
+    return res.end(
+      renderDashboard({
+        uptimeHuman: formatUptime(Date.now() - startTime),
+        appReady,
+        sync: getSyncStatus(),
+        keepalive: getKeepaliveStatus(),
+      }),
+    );
+  }
+
+  // Proxy logic to Paperclip (port 3100)
+  const proxyHeaders = {
+    ...req.headers,
+    host: `${APP_HOST}:${APP_PORT}`,
+    "x-forwarded-for": req.socket.remoteAddress,
+    "x-forwarded-host": req.headers.host,
+    "x-forwarded-proto": "https",
   };
-}
 
-function proxyHttp(req, res, overridePath) {
-  const targetPath = overridePath !== undefined ? overridePath : req.url;
-  let upstreamStarted = false;
   const proxyReq = http.request(
-    { hostname: PAPERCLIP_HOST, port: PAPERCLIP_PORT, method: req.method, path: targetPath, headers: buildProxyHeaders(req.headers) },
+    {
+      hostname: APP_HOST,
+      port: APP_PORT,
+      path: pathname + url.search,
+      method: req.method,
+      headers: proxyHeaders,
+    },
     (proxyRes) => {
-      upstreamStarted = true;
-      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
       proxyRes.pipe(res);
+      proxyRes.on("error", () => res.end());
     },
   );
-  proxyReq.on("error", (error) => {
-    if (res.headersSent || upstreamStarted) { res.destroy(); return; }
-    res.writeHead(502, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "error", message: "Paperclip unavailable", detail: error.message }));
+
+  req.on("error", () => proxyReq.destroy());
+  res.on("error", () => proxyReq.destroy());
+  proxyReq.on("error", () => {
+    if (!res.headersSent) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "starting", message: "Paperclip is booting..." }));
+    } else {
+      res.end();
+    }
   });
-  res.on("close", () => proxyReq.destroy());
+
   req.pipe(proxyReq);
-}
-
-function proxyUpgrade(req, socket, head, overridePath) {
-  const targetPath = overridePath !== undefined ? overridePath : req.url;
-  const proxySocket = net.connect(PAPERCLIP_PORT, PAPERCLIP_HOST);
-  proxySocket.on("connect", () => {
-    const clientIp = (function() {
-      const f = req.headers["x-forwarded-for"];
-      if (typeof f === "string") return f.split(",")[0].trim();
-      return req.socket.remoteAddress || "";
-    })();
-    const lines = [
-      `${req.method} ${targetPath} HTTP/${req.httpVersion}`,
-      ...req.rawHeaders.reduce((acc, val, i) => {
-        if (i % 2 === 0) { acc.push(i); } else { acc[acc.length - 1] = `${req.rawHeaders[acc[acc.length - 1]]}: ${val}`; }
-        return acc;
-      }, []).filter((h) => {
-        const lower = (typeof h === "string" ? h : "").toLowerCase();
-        return !lower.startsWith("host:") && !lower.startsWith("x-forwarded-");
-      }),
-      `Host: ${PAPERCLIP_HOST}:${PAPERCLIP_PORT}`,
-      `X-Forwarded-For: ${clientIp}`,
-      `X-Forwarded-Host: ${req.headers.host || ""}`,
-      `X-Forwarded-Proto: ${req.headers["x-forwarded-proto"] || "https"}`,
-      "", "",
-    ];
-    proxySocket.write(lines.join("\r\n"));
-    if (head && head.length > 0) proxySocket.write(head);
-    socket.pipe(proxySocket).pipe(socket);
-  });
-  proxySocket.on("error", () => {
-    if (socket.writable) socket.write("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
-    socket.destroy();
-  });
-  socket.on("error", () => proxySocket.destroy());
-}
-
-// ============================================================================
-// HTTP Server
-// ============================================================================
-
-const server = http.createServer((req, res) => {
-  const parsedUrl = parseRequestUrl(req.url || "/");
-  const pathname = parsedUrl.pathname;
-  const uptime = Math.floor((Date.now() - startTime) / 1000);
-
-  // ── Health endpoint ────────────────────────────────────────────────────────
-  if (pathname === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "ok",
-      uptime,
-      uptimeHuman: formatUptime(uptime),
-      timestamp: new Date().toISOString(),
-      sync: readSyncStatus(),
-    }));
-    return;
-  }
-
-  // ── Status endpoint (JSON, polled by dashboard) ───────────────────────────
-  if (pathname === "/status") {
-    void (async () => {
-      const paperclipStatus = await checkPaperclipHealth();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        uptime: formatUptime(uptime),
-        paperclipRunning: paperclipStatus.status === "running",
-        sync: readSyncStatus(),
-        inviteUrl: readInviteUrl(),
-      }));
-    })();
-    return;
-  }
-
-  // ── Dashboard (root) ───────────────────────────────────────────────────────
-  if (pathname === "/" || pathname === "") {
-    void (async () => {
-      const paperclipStatus = await checkPaperclipHealth();
-      const initialData = {
-        paperclipRunning: paperclipStatus.status === "running",
-        sync: readSyncStatus(),
-        inviteUrl: readInviteUrl(),
-      };
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(renderDashboard(initialData));
-    })();
-    return;
-  }
-
-  // ── /invite/* → redirect to /app/invite/* (SPA uses basename="/app") ────────
-  if (pathname.startsWith("/invite/") || pathname === "/invite") {
-    const rest = pathname.slice("/invite".length) || "/";
-    const query = parsedUrl.search || "";
-    res.writeHead(302, { Location: "/app/invite" + rest + query });
-    res.end();
-    return;
-  }
-
-  // ── /app/* → strip prefix, proxy to Paperclip ─────────────────────────────
-  // SPA built with basename="/app"; React Router strips /app client-side.
-  if (pathname === "/app" || pathname.startsWith("/app/")) {
-    const stripped = pathname.slice("/app".length) || "/";
-    const query = parsedUrl.search || "";
-    proxyHttp(req, res, stripped + query);
-    return;
-  }
-
-  // ── Everything else → proxy directly ──────────────────────────────────────
-  proxyHttp(req, res);
 });
 
 server.on("upgrade", (req, socket, head) => {
-  const pathname = parseRequestUrl(req.url || "/").pathname;
-  if (isLocalRoute(pathname)) { socket.destroy(); return; }
-  if (pathname === "/app" || pathname.startsWith("/app/")) {
-    const stripped = pathname.slice("/app".length) || "/";
-    proxyUpgrade(req, socket, head, stripped + (parseRequestUrl(req.url).search || ""));
-    return;
-  }
-  proxyUpgrade(req, socket, head);
+  const url = parseRequestUrl(req.url);
+  const proxyPath = url.pathname;
+  const proxySocket = net.connect(APP_PORT, APP_HOST, () => {
+    proxySocket.write(`${req.method} ${proxyPath}${url.search} HTTP/${req.httpVersion}\r\n`);
+    for (let i = 0; i < req.rawHeaders.length; i += 2) {
+      proxySocket.write(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`);
+    }
+    proxySocket.write("\r\n");
+    if (head && head.length) proxySocket.write(head);
+    proxySocket.pipe(socket).pipe(proxySocket);
+  });
+  proxySocket.on("error", () => socket.destroy());
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`✓ Health server listening on port ${PORT}`);
-  console.log(`✓ Dashboard: http://localhost:${PORT}/`);
-  console.log(`✓ API proxy: http://localhost:${PORT}/api/*`);
-  console.log(`✓ App proxy: http://localhost:${PORT}/  (root → Paperclip)`);
-});
+server.timeout = 0;
+server.keepAliveTimeout = 65000;
+server.listen(PORT, "0.0.0.0", () =>
+  console.log(`🧬 HuggingClip Dashboard on ${PORT} -> Paperclip on ${APP_PORT}`),
+);
