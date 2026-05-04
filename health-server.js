@@ -54,6 +54,56 @@ function getKeepaliveStatus() {
   return null;
 }
 
+async function getPluginStatus(timeoutMs = 1500) {
+  // Try several possible Paperclip API endpoints to list plugins/tools
+  const paths = ["/api/plugins", "/api/tools", "/api/plugins/list"];
+  for (const p of paths) {
+    try {
+      const result = await new Promise((resolve) => {
+        const req = http.get(
+          { hostname: APP_HOST, port: APP_PORT, path: p, timeout: timeoutMs },
+          (res) => {
+            let body = "";
+            res.on("data", (c) => (body += c));
+            res.on("end", () => resolve({ statusCode: res.statusCode, body }));
+          },
+        );
+        req.on("timeout", () => {
+          req.destroy();
+          resolve(null);
+        });
+        req.on("error", () => resolve(null));
+      });
+
+      if (!result || !result.body) continue;
+      if (result.statusCode >= 400) continue;
+
+      try {
+        const parsed = JSON.parse(result.body);
+        let list = [];
+        if (Array.isArray(parsed)) list = parsed;
+        else if (parsed.plugins && Array.isArray(parsed.plugins))
+          list = parsed.plugins;
+        else if (parsed.tools && Array.isArray(parsed.tools))
+          list = parsed.tools;
+        else if (parsed.items && Array.isArray(parsed.items))
+          list = parsed.items;
+
+        // Normalize list to array of names/ids
+        const names = list.map((it) =>
+          typeof it === "string" ? it : it.name || it.id || JSON.stringify(it),
+        );
+        return { count: names.length, list: names };
+      } catch (e) {
+        continue;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+  return null;
+}
+
 function getInviteUrl() {
   try {
     if (fs.existsSync(INVITE_URL_FILE)) {
@@ -138,6 +188,17 @@ function renderDashboard(data) {
     ? escapeHtml(data.sync.message)
     : "No status yet";
 
+  // Show a concise status meta for the Backup tile (last sync time or sync count)
+  const backupMeta = (() => {
+    if (data.sync?.last_sync_time) {
+      return `Last sync: <code>${escapeHtml(data.sync.last_sync_time)}</code>`;
+    }
+    if (typeof data.sync?.sync_count === "number") {
+      return `Syncs: ${String(data.sync.sync_count)}`;
+    }
+    return "";
+  })();
+
   const keepaliveConfigured = data.keepalive?.configured === true;
   const keepaliveStatus = String(
     data.keepalive?.status ||
@@ -155,6 +216,9 @@ function renderDashboard(data) {
       : "Not configured";
 
   const inviteUrl = getInviteUrl();
+
+  const pluginCount = Number(data.plugins?.count || 0);
+  const pluginList = Array.isArray(data.plugins?.list) ? data.plugins.list : [];
 
   const tiles = [
     renderTile({
@@ -183,6 +247,19 @@ function renderDashboard(data) {
       value: toneBadge(syncStatus.toUpperCase(), syncTone),
       detail: backupDetail,
       tone: syncTone,
+      meta: backupMeta,
+    }),
+    renderTile({
+      title: "Plugins",
+      value: toneBadge(
+        pluginCount ? String(pluginCount) : "0",
+        pluginCount ? "ok" : "neutral",
+      ),
+      detail: pluginCount
+        ? escapeHtml(pluginList.slice(0, 6).join(", "))
+        : "No plugins loaded",
+      meta: pluginCount > 6 ? `+${pluginCount - 6} more` : "",
+      tone: pluginCount ? "ok" : "neutral",
     }),
     renderTile({
       title: "Keep Awake",
@@ -243,7 +320,7 @@ function renderDashboard(data) {
 <body>
   <main>
     <header>
-      <h1>🧬 HuggingClip</h1>
+      <h1>HuggingClip</h1>
       <div class="subtitle">Paperclip Orchestrator Dashboard</div>
     </header>
     ${
@@ -271,6 +348,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/health") {
     const appReady = await probeAppHealth();
+    const plugins = await getPluginStatus();
     res.writeHead(appReady ? 200 : 503, { "Content-Type": "application/json" });
     return res.end(
       JSON.stringify({
@@ -278,12 +356,14 @@ const server = http.createServer(async (req, res) => {
         uptime: formatUptime(Date.now() - startTime),
         sync: getSyncStatus(),
         keepalive: getKeepaliveStatus(),
+        plugins: plugins,
       }),
     );
   }
 
   if (pathname === "/" || pathname === "/dashboard") {
     const appReady = await probeAppHealth();
+    const plugins = await getPluginStatus();
     res.writeHead(200, { "Content-Type": "text/html" });
     return res.end(
       renderDashboard({
@@ -291,6 +371,7 @@ const server = http.createServer(async (req, res) => {
         appReady,
         sync: getSyncStatus(),
         keepalive: getKeepaliveStatus(),
+        plugins: plugins,
       }),
     );
   }
@@ -358,7 +439,5 @@ server.on("upgrade", (req, socket, head) => {
 server.timeout = 0;
 server.keepAliveTimeout = 65000;
 server.listen(PORT, "0.0.0.0", () =>
-  console.log(
-    `🧬 HuggingClip Dashboard on ${PORT} -> Paperclip on ${APP_PORT}`,
-  ),
+  console.log(`HuggingClip Dashboard on ${PORT} -> Paperclip on ${APP_PORT}`),
 );
