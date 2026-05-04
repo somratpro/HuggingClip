@@ -101,6 +101,14 @@ def parse_db_url(db_url: str) -> dict:
 def write_status(status: dict):
     """Write sync status to file for dashboard"""
     try:
+        # Ensure compatibility with dashboard fields: `status` and `message`
+        try:
+            if 'db_status' in status and 'status' not in status:
+                status['status'] = status['db_status']
+            if 'last_error' in status and 'message' not in status:
+                status['message'] = status['last_error']
+        except Exception:
+            pass
         STATUS_FILE.write_text(json.dumps(status, indent=2))
     except Exception as e:
         logger.error(f'Failed to write status file: {e}')

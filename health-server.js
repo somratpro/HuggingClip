@@ -9,7 +9,8 @@ const APP_HOST = "127.0.0.1";
 const startTime = Date.now();
 const INVITE_URL_FILE = "/tmp/invite-url.txt";
 const SYNC_STATUS_FILE = "/tmp/sync-status.json";
-const CLOUDFLARE_KEEPALIVE_STATUS_FILE = "/tmp/huggingclip-cloudflare-keepalive-status.json";
+const CLOUDFLARE_KEEPALIVE_STATUS_FILE =
+  "/tmp/huggingclip-cloudflare-keepalive-status.json";
 
 function parseRequestUrl(url) {
   try {
@@ -22,7 +23,15 @@ function parseRequestUrl(url) {
 function getSyncStatus() {
   try {
     if (fs.existsSync(SYNC_STATUS_FILE)) {
-      return JSON.parse(fs.readFileSync(SYNC_STATUS_FILE, "utf8"));
+      const raw = fs.readFileSync(SYNC_STATUS_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (!parsed.status && parsed.db_status) parsed.status = parsed.db_status;
+      if (!parsed.message) {
+        if (parsed.last_error) parsed.message = parsed.last_error;
+        else if (parsed.last_sync_time)
+          parsed.message = `Last sync: ${parsed.last_sync_time}`;
+      }
+      return parsed;
     }
   } catch {}
   if (process.env.HF_TOKEN) {
@@ -37,7 +46,9 @@ function getSyncStatus() {
 function getKeepaliveStatus() {
   try {
     if (fs.existsSync(CLOUDFLARE_KEEPALIVE_STATUS_FILE)) {
-      return JSON.parse(fs.readFileSync(CLOUDFLARE_KEEPALIVE_STATUS_FILE, "utf8"));
+      return JSON.parse(
+        fs.readFileSync(CLOUDFLARE_KEEPALIVE_STATUS_FILE, "utf8"),
+      );
     }
   } catch {}
   return null;
@@ -96,7 +107,13 @@ function toneBadge(label, tone = "neutral") {
   return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
 }
 
-function renderTile({ title, value, detail = "", tone = "neutral", meta = "" }) {
+function renderTile({
+  title,
+  value,
+  detail = "",
+  tone = "neutral",
+  meta = "",
+}) {
   return `<article class="tile ${tone}">
     <div class="tile-head">
       <span class="tile-title">${escapeHtml(title)}</span>
@@ -110,12 +127,16 @@ function renderTile({ title, value, detail = "", tone = "neutral", meta = "" }) 
 
 function renderDashboard(data) {
   const syncStatus = String(data.sync?.status || "unknown");
-  const syncTone = ["success", "restored", "synced", "configured"].includes(syncStatus)
+  const syncTone = ["success", "restored", "synced", "configured"].includes(
+    syncStatus,
+  )
     ? "ok"
     : syncStatus === "disabled"
       ? "warn"
       : "neutral";
-  const backupDetail = data.sync?.message ? escapeHtml(data.sync.message) : "No status yet";
+  const backupDetail = data.sync?.message
+    ? escapeHtml(data.sync.message)
+    : "No status yet";
 
   const keepaliveConfigured = data.keepalive?.configured === true;
   const keepaliveStatus = String(
@@ -138,7 +159,10 @@ function renderDashboard(data) {
   const tiles = [
     renderTile({
       title: "Paperclip Core",
-      value: toneBadge(data.appReady ? "Online" : "Booting", data.appReady ? "ok" : "warn"),
+      value: toneBadge(
+        data.appReady ? "Online" : "Booting",
+        data.appReady ? "ok" : "warn",
+      ),
       detail: `Backend Port ${APP_PORT}`,
       tone: data.appReady ? "ok" : "warn",
     }),
@@ -162,7 +186,10 @@ function renderDashboard(data) {
     }),
     renderTile({
       title: "Keep Awake",
-      value: toneBadge(keepaliveConfigured ? "CF Cron" : keepaliveStatus.toUpperCase(), keepAliveTone),
+      value: toneBadge(
+        keepaliveConfigured ? "CF Cron" : keepaliveStatus.toUpperCase(),
+        keepAliveTone,
+      ),
       detail: keepAliveDetail,
       tone: keepAliveTone,
     }),
@@ -175,14 +202,14 @@ function renderDashboard(data) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HuggingClip</title>
   <style>
-    :root { color-scheme: dark; --bg:#08080f; --panel:#12111b; --panel2:#151421; --line:#26243a; --text:#f6f4ff; --muted:#7f7a9e; --soft:#b8b3d7; --good:#22c55e; --warn:#f5c542; --bad:#fb7185; --accent:#3b82f6; --accent2:#8b5cf6; }
+    :root { color-scheme: dark; --bg:#08080f; --panel:#12111b; --panel2:#151421; --line:#26243a; --text:#f6f4ff; --muted:#7f7a9e; --soft:#b8b3d7; --good:#22c55e; --warn:#f5c542; --bad:#fb7185;}
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); font-size:13px; }
     main { width:min(720px, calc(100% - 32px)); margin:0 auto; padding:36px 0 44px; }
     header { text-align:center; margin-bottom:22px; }
     h1 { margin:0; font-size:1.65rem; line-height:1; letter-spacing:0; }
     .subtitle { margin-top:12px; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.14em; font-weight:800; }
-    .hero-action { display:flex; width:100%; min-height:46px; align-items:center; justify-content:center; border-radius:8px; background:linear-gradient(135deg, var(--accent), var(--accent2)); color:#ffffff; text-decoration:none; font-weight:850; font-size:.98rem; margin:24px 0 20px; transition: opacity 0.15s ease; }
+    .hero-action { display:flex; width:100%; min-height:46px; align-items:center; justify-content:center; border-radius:8px; background:#fff; color:#000; text-decoration:none; font-weight:850; font-size:.98rem; margin:24px 0 20px; transition: opacity 0.15s ease; }
     .hero-action:hover { opacity: 0.9; }
     .invite-banner { background:rgba(245,197,66,.1); border:1px solid rgba(245,197,66,.2); border-radius:8px; padding:12px 16px; margin-bottom:20px; display:flex; flex-direction:column; gap:6px; }
     .invite-banner span { color:var(--warn); font-weight:850; font-size:.75rem; text-transform:uppercase; }
@@ -219,11 +246,15 @@ function renderDashboard(data) {
       <h1>🧬 HuggingClip</h1>
       <div class="subtitle">Paperclip Orchestrator Dashboard</div>
     </header>
-    ${inviteUrl ? `
+    ${
+      inviteUrl
+        ? `
     <div class="invite-banner">
       <span>Admin Setup Required</span>
       <code>${escapeHtml(inviteUrl)}</code>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
     <a class="hero-action" href="/app/" target="_blank" rel="noopener noreferrer">Open Paperclip UI -></a>
     <section class="overview">
       ${tiles}
@@ -293,7 +324,12 @@ const server = http.createServer(async (req, res) => {
   proxyReq.on("error", () => {
     if (!res.headersSent) {
       res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "starting", message: "Paperclip is booting..." }));
+      res.end(
+        JSON.stringify({
+          status: "starting",
+          message: "Paperclip is booting...",
+        }),
+      );
     } else {
       res.end();
     }
@@ -306,7 +342,9 @@ server.on("upgrade", (req, socket, head) => {
   const url = parseRequestUrl(req.url);
   const proxyPath = url.pathname;
   const proxySocket = net.connect(APP_PORT, APP_HOST, () => {
-    proxySocket.write(`${req.method} ${proxyPath}${url.search} HTTP/${req.httpVersion}\r\n`);
+    proxySocket.write(
+      `${req.method} ${proxyPath}${url.search} HTTP/${req.httpVersion}\r\n`,
+    );
     for (let i = 0; i < req.rawHeaders.length; i += 2) {
       proxySocket.write(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`);
     }
@@ -320,5 +358,7 @@ server.on("upgrade", (req, socket, head) => {
 server.timeout = 0;
 server.keepAliveTimeout = 65000;
 server.listen(PORT, "0.0.0.0", () =>
-  console.log(`🧬 HuggingClip Dashboard on ${PORT} -> Paperclip on ${APP_PORT}`),
+  console.log(
+    `🧬 HuggingClip Dashboard on ${PORT} -> Paperclip on ${APP_PORT}`,
+  ),
 );
