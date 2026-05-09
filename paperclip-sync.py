@@ -49,6 +49,7 @@ SYNC_MAX_FILE_BYTES = int(os.environ.get('SYNC_MAX_FILE_BYTES', '52428800'))  # 
 PAPERCLIP_HOME = os.environ.get('PAPERCLIP_HOME', '/paperclip')
 # Status file for dashboard
 STATUS_FILE = Path('/tmp/sync-status.json')
+STATE_FILE = Path('/tmp/huggingclip-sync-state.json')
 
 # ============================================================================
 # Helper Functions
@@ -391,12 +392,97 @@ def sync_from_hf() -> bool:
         return False
 
 # ============================================================================
+# Change detection helpers
+# ============================================================================
+
+def _get_db_marker() -> int:
+    """Return cumulative DB activity count from pg_stat_database. -1 on error."""
+    db = parse_db_url(DATABASE_URL)
+    if not db:
+        return -1
+    try:
+        env = os.environ.copy()
+        if db['password']:
+            env['PGPASSWORD'] = db['password']
+        db_name = db['database']
+        result = subprocess.run(
+            [
+                'psql',
+                f'--host={db["host"]}',
+                f'--port={db["port"]}',
+                f'--username={db["user"]}',
+                '--no-password', '--tuples-only', '--no-align',
+                '-c',
+                f"SELECT xact_commit + xact_rollback + tup_inserted + tup_updated + tup_deleted "
+                f"FROM pg_stat_database WHERE datname = '{db_name}'",
+            ],
+            env=env, capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return int(result.stdout.strip())
+    except Exception:
+        pass
+    return -1
+
+
+def _fs_marker(root: str) -> tuple[int, int, int]:
+    p = Path(root)
+    if not p.exists():
+        return (0, 0, 0)
+    fc = ts = nm = 0
+    for path in p.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            st = path.stat()
+            fc += 1
+            ts += int(st.st_size)
+            nm = max(nm, int(st.st_mtime_ns))
+        except OSError:
+            continue
+    return (fc, ts, nm)
+
+
+def _current_marker() -> tuple:
+    return (_get_db_marker(),) + _fs_marker(PAPERCLIP_HOME)
+
+
+def _load_sync_state():
+    try:
+        if STATE_FILE.exists():
+            d = json.loads(STATE_FILE.read_text())
+            m = d.get('marker')
+            if m and len(m) == 4:
+                return tuple(m)
+    except Exception:
+        pass
+    return None
+
+
+def _save_sync_state(marker: tuple) -> None:
+    try:
+        STATE_FILE.write_text(json.dumps({'marker': list(marker)}))
+    except Exception as e:
+        logger.debug(f'Could not save sync state: {e}')
+
+
+# ============================================================================
 # Main Sync Operations
 # ============================================================================
 
 def sync_to_backup() -> bool:
     """Full backup operation: dump DB → create tarball → upload to HF"""
     logger.info('Syncing backup to HF Dataset...')
+
+    last_marker = _load_sync_state()
+    current_marker = _current_marker()
+    if last_marker is not None and current_marker == last_marker:
+        status = read_status()
+        status['status'] = 'synced'
+        status['message'] = 'No state changes detected.'
+        write_status(status)
+        logger.info('No state changes detected — skipping backup.')
+        return True
 
     status = read_status()
 
@@ -430,6 +516,7 @@ def sync_to_backup() -> bool:
 
         if success:
             logger.info('Backup synced OK')
+            _save_sync_state(current_marker)
         else:
             logger.warning('Backup sync failed')
 
