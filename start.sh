@@ -17,7 +17,10 @@ export PAPERCLIP_CONFIG="${PAPERCLIP_CONFIG:-${PAPERCLIP_HOME}/instances/default
 export PAPERCLIP_TELEMETRY_DISABLED="${PAPERCLIP_TELEMETRY_DISABLED:-1}"
 export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 export OPENCODE_ALLOW_ALL_MODELS="${OPENCODE_ALLOW_ALL_MODELS:-true}"
-export SYNC_INTERVAL="${SYNC_INTERVAL:-3600}"
+# Sanitize: strip non-digits, clamp minimum to 60s to prevent spin loops.
+SYNC_INTERVAL=$(printf '%s' "${SYNC_INTERVAL:-3600}" | tr -dc '0-9')
+{ [ -z "${SYNC_INTERVAL}" ] || [ "${SYNC_INTERVAL}" -lt 60 ]; } && SYNC_INTERVAL=3600
+export SYNC_INTERVAL
 export SYNC_MAX_FILE_BYTES="${SYNC_MAX_FILE_BYTES:-52428800}"
 export BACKUP_DATASET_NAME="${BACKUP_DATASET_NAME:-huggingclip-backup}"
 
